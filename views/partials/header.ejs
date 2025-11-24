@@ -1,0 +1,67 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container-fluid">
+    <!-- Brand -->
+    <a class="navbar-brand" href="/">Supermarket App</a>
+
+    <!-- Toggler for small screens -->
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <!-- Navbar content -->
+    <div class="collapse navbar-collapse" id="navbarContent">
+      <!-- Left side links -->
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <% if (user && user.role === 'admin') { %>
+          <li class="nav-item">
+            <a class="nav-link" href="/inventory">Inventory</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/addProduct">Add Product</a>
+          </li>
+        <% } else if (user) { %>
+          <li class="nav-item">
+            <a class="nav-link" href="/shopping">Shopping</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/cart">Cart</a>
+          </li>
+        <% } %>
+      </ul>
+
+      <!-- Search bar (all logged-in users) -->
+      <% if (user) { %>
+        <form class="d-flex me-3" action="/search" method="GET">
+          <input class="form-control me-2" type="search" name="q" placeholder="Search products" aria-label="Search">
+          <button class="btn btn-outline-light" type="submit">Search</button>
+        </form>
+      <% } %>
+
+      <!-- Profile dropdown (far right) -->
+      <% if (user) { %>
+        <ul class="navbar-nav">
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+              <%= user.username %>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="/profile">Profile</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item" href="/logout">Logout</a></li>
+            </ul>
+          </li>
+        </ul>
+      <% } else { %>
+        <!-- Login/Register for guests -->
+        <ul class="navbar-nav">
+          <li class="nav-item">
+            <a class="nav-link" href="/login">Login</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/register">Register</a>
+          </li>
+        </ul>
+      <% } %>
+    </div>
+  </div>
+</nav>
