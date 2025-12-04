@@ -67,4 +67,10 @@ exports.getOrderItemsByUser = (userId, callback) => {
   db.query(sql, [userId], callback);
 };
 
+// Update order status (used by admin)
+exports.updateOrderStatus = function (orderId, status, callback) {
+  const sql = 'UPDATE orders SET status = ? WHERE id = ?';
+  db.query(sql, [status, orderId], callback);
+};
+
 module.exports = exports;
