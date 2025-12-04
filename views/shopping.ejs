@@ -12,7 +12,13 @@
 <%- include('partials/header') %>
 
 <div class="container mt-4">
-  <p>Welcome, <%= user.username %> (<%= user.role %>)</p>
+  <p>
+    <% if (user && user.username) { %>
+      Welcome, <%= user.username %> (<%= user.role %>)
+    <% } else { %>
+      Welcome, guest!
+    <% } %>
+  </p>
 
   <div class="mb-3">
     <h4>Groceries & Fresh Produce</h4>

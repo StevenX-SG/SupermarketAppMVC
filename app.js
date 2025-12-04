@@ -83,7 +83,7 @@ app.get('/', (req, res) => {
   Product.getAllProducts((err, products) => {
     if (err) return res.status(500).send('Error loading products');
 
-    const featured = products.slice(0, 8); // limit to 8 items
+    const featured = products.slice(0, 4); // limit to 8 items
     res.render('index', {
       user: req.session.user || null,
       products: featured
@@ -167,9 +167,9 @@ app.post('/users/edit/:id', checkAuthenticated, checkAdmin, userController.updat
 app.post('/users/delete/:id', checkAuthenticated, checkAdmin, userController.deleteUser);
 
 // ---------- SHOPPING ----------
-app.get('/search', checkAuthenticated, productController.getAllProducts);
-app.get('/shopping', checkAuthenticated, productController.getAllProducts);
-app.get('/product/:id', checkAuthenticated, productController.getProductById);
+app.get('/search', productController.getAllProducts);
+app.get('/shopping',productController.getAllProducts);
+app.get('/product/:id',productController.getProductById);
 
 // ---------- ADMIN PRODUCT MANAGEMENT ----------
 app.get('/inventory', (req, res) => {
