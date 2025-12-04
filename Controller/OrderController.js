@@ -73,7 +73,7 @@ exports.createOrderFromCart = (req, res) => {
   const gstRate = 0.09; // 9% GST
   const gst = subtotal * gstRate;
   const totalAmount = subtotal + gst;
-  const pointsEarned = Math.floor(subtotal);
+  const pointsEarned = Math.floor(subtotal); // Loyalty points: earn 1 point for every $1 of subtotal (before GST), rounded down
 
   // 1. Insert order into orders table
   Order.createOrder(userId, totalAmount, (err, result) => {

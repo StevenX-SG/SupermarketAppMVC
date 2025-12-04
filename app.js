@@ -3,7 +3,7 @@ const mysql = require('mysql2');
 const session = require('express-session');
 const flash = require('connect-flash');
 const multer = require('multer');
-
+const Product = require('./Model/Product');
 const app = express();
 
 // CONTROLLERS
@@ -80,7 +80,15 @@ app.use(function (req, res, next) {
 
 // ---------- HOME ----------
 app.get('/', (req, res) => {
-  res.render('index', { user: req.session.user });
+  Product.getAllProducts((err, products) => {
+    if (err) return res.status(500).send('Error loading products');
+
+    const featured = products.slice(0, 8); // limit to 8 items
+    res.render('index', {
+      user: req.session.user || null,
+      products: featured
+    });
+  });
 });
 
 // ---------- AUTH ----------
