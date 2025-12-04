@@ -1,0 +1,14 @@
+.navbar-fairprime {
+  background: linear-gradient(90deg, #146EB4, #FF9900); /* blue → orange */
+}
+.navbar-fairprime .navbar-brand,
+.navbar-fairprime .nav-link,
+.navbar-fairprime .navbar-nav .nav-link {
+  color: #ffffff;          /* pure white */
+  font-weight: 500;
+}
+
+.navbar-fairprime .nav-link.active,
+.navbar-fairprime .nav-link:hover {
+  color: #FFEFD5;          /* soft light highlight */
+}

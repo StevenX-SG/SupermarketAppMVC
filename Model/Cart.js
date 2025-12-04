@@ -10,33 +10,36 @@ class Cart {
     if (!storedItem) {
       storedItem = this.items[id] = {
         id: id,
-        productName: product.productName,
-        image: product.image,
-        price: product.price,
+        productName: product.productName || '', // default empty string
+        image: product.image || '',             // default empty string
+        price: Number(product.price) || 0,      // ensure number
+        category: product.category || '',   // new
+        tags: product.tags || '',           // new
         quantity: 0,
-        maxQuantity: product.quantity // just in case you want to use it
+        maxQuantity: Number(product.quantity) || 0
       };
     }
     storedItem.quantity += Number(qty);
     this.totalQty += Number(qty);
-    this.totalPrice += Number(qty) * product.price;
-    // Note: price * quantity is always available as storedItem.price * storedItem.quantity in your EJS
+    this.totalPrice += Number(qty) * storedItem.price;
   }
 
   remove(id) {
-    if (this.items[id]) {
-      this.totalQty -= this.items[id].quantity;
-      this.totalPrice -= this.items[id].price * this.items[id].quantity;
+    const item = this.items[id];
+    if (item) {
+      this.totalQty -= item.quantity;
+      this.totalPrice -= item.price * item.quantity;
       delete this.items[id];
     }
   }
 
   updateQuantity(id, newQty) {
-    let item = this.items[id];
+    const item = this.items[id];
     if (item) {
-      this.totalQty += (newQty - item.quantity);
-      this.totalPrice += (newQty - item.quantity) * item.price;
-      item.quantity = newQty;
+      const diff = Number(newQty) - item.quantity;
+      this.totalQty += diff;
+      this.totalPrice += diff * item.price;
+      item.quantity = Number(newQty);
     }
   }
 

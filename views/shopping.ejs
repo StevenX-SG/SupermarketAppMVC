@@ -5,58 +5,188 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <title>Supermarket App</title>
+  <title>FairPrime Market - Shopping</title>
 </head>
 <body>
-  <%- include('partials/header') %>
 
-  <div class="container mt-4">
-    <p>Welcome, <%= user.username %> (<%= user.role %>)</p>
-    <div class="text-center mb-4">
-      <h2>Products from Supermarket</h2>
-    </div>
+<%- include('partials/header') %>
 
-    <table class="table table-hover text-center">
-      <thead class="table-dark align-middle">
-        <tr>
-          <th>Product Name</th>
-          <th>Product Image</th>
-          <th>Available</th>
-          <th>Price</th>
-          <th>Qty</th>
-          <th>Buy</th>
-        </tr>
-      </thead>
-      <tbody>
-        <% for(let i = 0; i < products.length; i++) { %>
-          <tr class="align-middle">
-            <td class="py-3"><a href="/product/<%= products[i].id %>"><%= products[i].productName %></a></td>
-            <td class="py-3"><%= products[i].category || 'N/A' %></td>
-            <td class="py-3"><%= products[i].tags || 'N/A' %></td>
-            <td class="py-3">
-              <img src="/images/<%= products[i].image %>" alt="<%= products[i].productName %>" class="img-thumbnail" style="max-width: 100px;">
-            </td>
-            <td class="py-3"><%= products[i].quantity %></td>
-            <td class="py-3">$<%= products[i].price.toFixed(2) %></td>
-            <td class="py-3">
-              <select class="form-select" onchange="document.getElementById('quantity-<%= products[i].id %>').value = this.value">
-                <% for (let q = 1; q <= 5; q++) { %>
-                  <option value="<%= q %>"><%= q %></option>
-                <% } %>
-              </select>
-            </td>
-            <td class="py-3">
-              <form action="/add-to-cart/<%= products[i].id %>" method="POST">
-                <input type="hidden" name="quantity" id="quantity-<%= products[i].id %>" value="1">
-                <button type="submit" class="btn btn-success btn-sm">Buy</button>
-              </form>
-            </td>
-          </tr>
-        <% } %>
-      </tbody>
-    </table>
+<div class="container mt-4">
+  <p>Welcome, <%= user.username %> (<%= user.role %>)</p>
+
+  <div class="mb-3">
+    <h4>Groceries & Fresh Produce</h4>
+    <small class="text-muted">Browse supermarket products by category and brand.</small>
   </div>
 
-  <%- include('partials/footer') %>
+  <div class="row">
+    <!-- LEFT: FILTER SIDEBAR -->
+    <div class="col-md-3 mb-4">
+
+      <!-- Category filter -->
+      <div class="border rounded p-3 mb-3">
+        <h6 class="mb-2">Category</h6>
+        <form action="/shopping" method="GET">
+          <% (categories || []).forEach(c => { %>
+            <div class="form-check">
+              <input class="form-check-input"
+                     type="radio"
+                     name="category"
+                     value="<%= c %>"
+                     id="cat-<%= c %>"
+                     <%= selectedCategory === c ? 'checked' : '' %>>
+              <label class="form-check-label" for="cat-<%= c %>">
+                <%= c %>
+              </label>
+            </div>
+          <% }) %>
+          <button type="submit" class="btn btn-sm btn-primary mt-2 w-100">Apply</button>
+        </form>
+      </div>
+
+      <!-- Brand filter (real brand field) -->
+      <div class="border rounded p-3 mb-3">
+        <h6 class="mb-2">Brand</h6>
+        <form action="/shopping" method="GET">
+          <div style="max-height:260px; overflow-y:auto;">
+            <% (brands || []).forEach(b => { %>
+              <div class="form-check">
+                <input class="form-check-input"
+                       type="radio"
+                       name="brand"
+                       value="<%= b %>"
+                       id="brand-<%= b %>"
+                       <%= selectedBrand === b ? 'checked' : '' %>>
+                <label class="form-check-label" for="brand-<%= b %>">
+                  <%= b %>
+                </label>
+              </div>
+            <% }) %>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary mt-2 w-100">Apply</button>
+        </form>
+      </div>
+
+      <!-- Price range -->
+      <div class="border rounded p-3 mb-3">
+        <h6 class="mb-2">Price</h6>
+        <form action="/shopping" method="GET" class="row g-2">
+          <div class="col-6">
+            <input type="number" step="0.01" name="minPrice"
+                   value="<%= minPrice || '' %>"
+                   class="form-control form-control-sm" placeholder="Min">
+          </div>
+          <div class="col-6">
+            <input type="number" step="0.01" name="maxPrice"
+                   value="<%= maxPrice || '' %>"
+                   class="form-control form-control-sm" placeholder="Max">
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-sm btn-primary w-100 mt-1">Apply</button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: PRODUCT GRID -->
+    <div class="col-md-9">
+      <!-- Sort bar -->
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="text-muted small">
+          Showing <%= products.length %> items
+          <% if (selectedCategory) { %>
+            in "<%= selectedCategory %>"
+          <% } %>
+          <% if (selectedBrand) { %>
+            for brand "<%= selectedBrand %>"
+          <% } %>
+        </div>
+        <form action="/shopping" method="GET" class="d-flex align-items-center gap-2">
+          <label class="small text-muted mb-0">Sort by:</label>
+          <select name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">Default</option>
+            <option value="price_asc"  <%= sort === 'price_asc' ? 'selected' : '' %>>Price: Low to High</option>
+            <option value="price_desc" <%= sort === 'price_desc' ? 'selected' : '' %>>Price: High to Low</option>
+            <option value="name_asc"   <%= sort === 'name_asc' ? 'selected' : '' %>>Name: A–Z</option>
+          </select>
+        </form>
+      </div>
+
+      <div class="row row-cols-2 row-cols-md-4 g-3">
+        <% products.forEach(product => { %>
+          <div class="col">
+            <div class="card h-100 border-0 shadow-sm position-relative">
+
+              <!-- IMAGE -->
+              <a href="/product/<%= product.id %>">
+                <%
+                  let img = '';
+                  if (product.image) {
+                    img = product.image.startsWith('http')
+                      ? product.image
+                      : '/images/' + product.image;
+                  }
+                %>
+                <% if (img) { %>
+                  <img src="<%= img %>" class="card-img-top p-2"
+                       style="height:170px; object-fit:contain;" alt="<%= product.productName %>">
+                <% } else { %>
+                  <div class="text-muted mt-4 mb-4">No image</div>
+                <% } %>
+              </a>
+
+              <div class="card-body d-flex flex-column p-2">
+
+                <!-- NAME -->
+                <h6 class="card-title mb-1" style="min-height:2.5em; font-size:0.9rem;">
+                  <a href="/product/<%= product.id %>" class="text-decoration-none text-dark">
+                    <%= product.productName %>
+                  </a>
+                </h6>
+
+                <!-- BRAND / CATEGORY / TAGS (brief) -->
+                <p class="text-muted small mb-1">
+                  <%= product.brand || 'Generic' %> • <%= product.category || 'N/A' %>
+                </p>
+
+                <!-- PRICE & STOCK -->
+                <div class="fw-bold text-danger mb-1">
+                  $<%= Number(product.price).toFixed(2) %>
+                </div>
+                <div class="text-muted small mb-2">
+                  Stock: <%= product.quantity || product.stock %>
+                </div>
+
+                <!-- WISHLIST + CART -->
+                <div class="mt-auto d-flex justify-content-between align-items-center">
+                  <form action="/wishlist/add/<%= product.id %>" method="POST" class="me-1">
+                    <button class="btn btn-outline-danger btn-sm" type="submit" title="Add to wishlist">
+                      ♥
+                    </button>
+                  </form>
+
+                  <form method="POST" action="/add-to-cart/<%= product.id %>" class="d-flex align-items-center">
+                    <input type="number"
+                           name="quantity"
+                           value="1"
+                           min="1"
+                           max="<%= product.quantity || product.stock %>"
+                           class="form-control form-control-sm me-1"
+                           style="width:60px;">
+                    <button class="btn btn-success btn-sm" type="submit">Add</button>
+                  </form>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>
 </body>
 </html>

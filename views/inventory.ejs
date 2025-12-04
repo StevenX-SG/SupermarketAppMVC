@@ -5,54 +5,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <title>Supermarket App - Inventory</title>
+  <title>FairPrime Market - Inventory</title>
 </head>
 <body>
   <%- include('partials/header') %>
 
   <div class="container mt-4">
-    <h1 class="text-center display-4">Welcome, <%= user.username %> (<%= user.role %>)</h1>
-    <% if (user.role === 'admin') { %>
-      <p class="text-center">Manage your supermarket inventory below.</p>
-    <% } %>
+    <h1 class="text-center display-4">Welcome <%= user.username %> (Admin)</h1>
+    <p class="text-center">Manage your supermarket inventory below.</p>
 
-    <div class="text-center mb-3"><h2>Products from Supermarket App Database</h2></div>
+    <div class="text-center mb-3">
+      <h2>Products from Supermarket App Database</h2>
+    </div>
 
     <table class="table table-hover text-center">
       <thead class="table-dark">
         <tr class="align-middle">
           <th class="py-3">Product Name</th>
+          <th class="py-3">Category</th>
+          <th class="py-3">Tags</th>
           <th class="py-3">Image</th>
           <th class="py-3">Quantity</th>
           <th class="py-3">Price</th>
-          <% if (user.role === 'admin') { %>
-            <th class="py-3">Edit</th>
-            <th class="py-3">Delete</th>
-          <% } %>
+          <th class="py-3">Edit</th>
+          <th class="py-3">Delete</th>
         </tr>
       </thead>
       <tbody>
-        <% products.forEach(product => { %>
+        <% (products || []).forEach(product => { %>
           <tr class="align-middle">
-            <td class="py-3"><a href="/product/<%= product.id %>"><%= product.productName %></a></td>
+            <td class="py-3">
+              <a href="/product/<%= product.id %>"><%= product.productName %></a>
+              <% if (String(product.isActive) === '0') { %>
+                <span class="badge bg-secondary ms-1">Inactive</span>
+              <% } %>
+            </td>
             <td class="py-3"><%= product.category || 'N/A' %></td>
             <td class="py-3"><%= product.tags || 'N/A' %></td>
             <td class="py-3">
-              <img src="/images/<%= product.image %>" width="80" alt="<%= product.productName %>" class="img-thumbnail">
+              <%
+                const imgSrc = product.image && product.image.startsWith('http')
+                  ? product.image
+                  : (product.image ? '/images/' + product.image : '');
+              %>
+              <% if (imgSrc) { %>
+                <img
+                  src="<%= imgSrc %>"
+                  width="80"
+                  alt="<%= product.productName %>"
+                  class="img-thumbnail"
+                >
+              <% } else { %>
+                <span class="text-muted">No image</span>
+              <% } %>
             </td>
             <td class="py-3"><%= product.quantity %></td>
-            <td class="py-3">$<%= product.price.toFixed(2) %></td>
-
-            <% if (user.role === 'admin') { %>
-              <td class="py-3">
-                <a href="/updateProduct/<%= product.id %>" class="btn btn-warning btn-sm">Edit</a>
-              </td>
-              <td class="py-3">
-                <form action="/deleteProduct/<%= product.id %>" method="POST" onsubmit="return confirm('Are you sure you want to delete this product?')">
-                  <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                </form>
-              </td>
-            <% } %>
+            <td class="py-3">$<%= Number(product.price).toFixed(2) %></td>
+            <td class="py-3">
+              <a href="/updateProduct/<%= product.id %>" class="btn btn-warning btn-sm">Edit</a>
+            </td>
+            <td class="py-3">
+              <form
+                action="/deleteProduct/<%= product.id %>"
+                method="POST"
+                onsubmit="return confirm('Are you sure you want to delete this product?')"
+              >
+                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+              </form>
+            </td>
           </tr>
         <% }) %>
       </tbody>
