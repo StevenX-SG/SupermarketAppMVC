@@ -194,7 +194,6 @@ app.post('/addProduct', checkAuthenticated, checkAdmin, upload.single('image'), 
 app.get('/editProduct/:id', checkAuthenticated, checkAdmin, productController.showEditForm);
 app.get('/updateProduct/:id', checkAuthenticated, checkAdmin, productController.showEditForm);
 app.post('/updateProduct/:id', checkAuthenticated, checkAdmin, upload.single('image'), productController.updateProduct);
-
 app.post('/deleteProduct/:id', checkAuthenticated, checkAdmin, productController.deleteProduct);
 
 // ---------- CART ----------
