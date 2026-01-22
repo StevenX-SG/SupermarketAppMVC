@@ -157,9 +157,28 @@
                       <option value="Shipped"    <%= o.status === 'Shipped' ? 'selected' : '' %>>Shipped</option>
                       <option value="Delivered"  <%= o.status === 'Delivered' ? 'selected' : '' %>>Delivered</option>
                       <option value="Cancelled"  <%= o.status === 'Cancelled' ? 'selected' : '' %>>Cancelled</option>
+                      <option value="Refund Requested" <%= o.status === 'Refund Requested' ? 'selected' : '' %>>Refund Requested</option>
+                      <option value="Refunded"   <%= o.status === 'Refunded' ? 'selected' : '' %>>Refunded</option>
                     </select>
                     <button type="submit" class="btn btn-success btn-sm">Update</button>
                   </form>
+
+                  <!-- Approve Refund Button (only if status is "Refund Requested") -->
+                  <% if (o.status === 'Refund Requested') { %>
+                    <div class="mb-2 p-2 bg-light rounded">
+                      <strong>Refund Reason:</strong> <%= o.refundReason || 'Not specified' %><br>
+                      <% if (o.refundNotes) { %>
+                        <strong>Customer Notes:</strong><br>
+                        <small><%= o.refundNotes %></small><br>
+                      <% } %>
+                    </div>
+                    <form action="/admin/orders/<%= o.id %>/refund-approve" method="POST" class="d-inline">
+                      <button type="submit" class="btn btn-success btn-sm"
+                              onclick="return confirm('Approve refund for Order #<%= o.id %>?')">
+                        Approve Refund
+                      </button>
+                    </form>
+                  <% } %>
 
                   <!-- Invoice + Delete -->
                   <div class="mt-1">

@@ -24,11 +24,15 @@ exports.addProduct = function (productName, quantity, price, image, category, ta
 };
 
 // Update product (with category + tags)
-exports.updateProduct = function (id, productName, quantity, price, image, category, tags, brand, callback) {
-  const sql = "UPDATE products SET productName = ?, quantity = ?, price = ?, image = ?, category = ?, tags = ?, brand = ? WHERE id = ?";
-  const values = [productName, quantity, price, image, category, tags || null, brand, id];
-  db.query(sql, values, callback);
+exports.updateProduct = function (id, name, quantity, price, image, category, tags, brand, callback) {
+  const sql = `
+    UPDATE products
+    SET productName = ?, quantity = ?, price = ?, image = ?, category = ?, tags = ?, brand = ?
+    WHERE id = ?
+  `;
+  db.query(sql, [name, quantity, price, image, category, tags, brand, id], callback);
 };
+
 
 // Delete product
 // exports.deleteProduct = function (id, callback) {

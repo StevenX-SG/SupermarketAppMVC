@@ -11,7 +11,11 @@
   <%- include('partials/header') %>
 
   <div class="container mt-4">
-    <p>Welcome, <%= user.username %> (<%= user.role %>)</p>
+    <% if (user) { %>
+      <p>Welcome, <%= user.username %> (<%= user.role %>)</p>
+    <% } else { %>
+      <p>Welcome, Guest</p>
+    <% } %>
 
     <div class="mb-4 text-center">
       <h2>Product Details</h2>
@@ -21,7 +25,7 @@
       <div class="row justify-content-center">
         <!-- LEFT: Image -->
         <div class="col-md-5 text-center mb-3">
-          <% 
+          <%
             let img = "";
             if (product.image) {
               img = product.image.startsWith("http")
@@ -58,7 +62,7 @@
           </h4>
 
           <!-- Actions differ by role -->
-          <% if (user.role === 'user') { %>
+          <% if (user && user.role === 'user') { %>
             <!-- Add to Cart -->
             <form method="POST" action="/add-to-cart/<%= product.id %>" class="d-flex align-items-center gap-2 mt-3">
               <label class="mb-0">Qty:</label>
@@ -82,14 +86,19 @@
                 ♥ Add to wishlist
               </button>
             </form>
-          <% } else { %>
+          <% } else if (user && user.role === 'admin') { %>
             <!-- Admin view: no cart, just info -->
             <div class="alert alert-info mt-3 mb-0">
               Admin view: product details only.
             </div>
+          <% } else { %>
+            <!-- Guest view -->
+            <div class="alert alert-warning mt-3 mb-0">
+              Please <a href="/login" class="alert-link">log in</a> to add this product to your cart or wishlist.
+            </div>
           <% } %>
 
-          <!-- Optional description (if you add this column later) -->
+          <!-- Optional description -->
           <% if (product.description) { %>
             <div class="mt-4">
               <h6>Description</h6>
@@ -104,7 +113,7 @@
 
     <!-- Back button -->
     <div class="mt-4">
-      <% if (user.role === 'admin') { %>
+      <% if (user && user.role === 'admin') { %>
         <a href="/inventory" class="btn btn-secondary">Back</a>
       <% } else { %>
         <a href="/shopping" class="btn btn-secondary">Back</a>

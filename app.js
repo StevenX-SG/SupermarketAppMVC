@@ -1,9 +1,12 @@
 const express = require('express');
 const mysql = require('mysql2');
+const bodyParser = require("body-parser");
 const session = require('express-session');
 const flash = require('connect-flash');
 const multer = require('multer');
 const Product = require('./Model/Product');
+const netsQr= require("./services/nets");
+const axios = require('axios');
 const app = express();
 
 // CONTROLLERS
@@ -13,6 +16,7 @@ const cartController = require('./Controller/CartController');
 const profileController = require('./Controller/profileController');
 const orderController = require('./Controller/OrderController');
 const wishlistController = require('./Controller/WishlistController');
+const paypal = require('./services/paypal');
 
 // MIDDLEWARE
 const {
@@ -27,7 +31,7 @@ const {
 const db = mysql.createConnection({
   host: 'localhost',
   user: 'root',
-  password: '12345678',
+  password: 'Republic_C207',
   database: 'c372_supermarketdb'
 });
 
@@ -56,6 +60,7 @@ const upload = multer({ storage });
 // APP SETTINGS
 // ==================================================
 app.set('view engine', 'ejs');
+app.use(bodyParser.json());
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -209,9 +214,60 @@ app.post('/checkout', checkAuthenticated, orderController.createOrderFromCart);
 // ---------- ORDERS ----------
 app.get('/orders', checkAuthenticated, orderController.getOrdersByUser);
 app.get('/orders/:id', checkAuthenticated, orderController.getOrderDetails);
+// PayPal capture callback
+app.post('/orders/paypal-complete', async (req, res) => {
+  try {
+    console.log('\n[ROUTE] POST /orders/paypal-complete received');
+    console.log('[ROUTE] Session user:', req.session.user ? { id: req.session.user.id, email: req.session.user.email } : 'NO SESSION');
+    
+    // Check authentication
+    if (!req.session || !req.session.user) {
+      console.error('[ROUTE] ✗ No valid session');
+      return res.status(401).json({ error: 'Not authenticated. Please log in first.' });
+    }
+    
+    console.log('[ROUTE] req.body:', req.body);
+    console.log('[ROUTE] req.session.cart items:', req.session.cart ? Object.keys(req.session.cart.items).length : 0);
+    
+    const { paypalOrderId } = req.body;
+    if (!paypalOrderId) {
+      console.error('[ROUTE] ERROR: No paypalOrderId in request body');
+      return res.status(400).json({ error: 'Missing paypalOrderId' });
+    }
+    
+    console.log('[ROUTE] Browser already captured the payment. Fetching order details to get capture info...');
+    const orderDetails = await paypal.getOrderDetails(paypalOrderId);
+    
+    console.log('[ROUTE] ✓ Order details received');
+    console.log('[ROUTE] Order status:', orderDetails.status);
+    
+    if (orderDetails.status !== 'COMPLETED') {
+      console.error('[ROUTE] ✗ Order not completed. Status:', orderDetails.status);
+      return res.status(400).json({ 
+        error: 'Order not completed',
+        received_status: orderDetails.status,
+        details: orderDetails
+      });
+    }
+    
+    console.log('[ROUTE] Delegating to orderController.payWithPaypal with order details containing capture info');
+    orderController.payWithPaypal(req, res, orderDetails);
+  } catch (err) {
+    console.error('[ROUTE] CATCH ERROR in /orders/paypal-complete:', {
+      message: err.message,
+      stack: err.stack,
+      code: err.code
+    });
+    res.status(500).json({ error: 'Internal server error', details: err.message });
+  }
+});
 // Admin: update order status
 app.post('/orders/updateStatus/:id',checkAuthenticated,checkAdmin,orderController.updateOrderStatus);
 app.post('/orders/delete/:id',checkAuthenticated,checkAdmin,orderController.deleteOrder);
+// Customer: request refund
+app.post('/orders/:id/refund-request', checkAuthenticated, orderController.requestRefund);
+// Admin: approve refund
+app.post('/admin/orders/:id/refund-approve', checkAuthenticated, checkAdmin, orderController.approveRefund);
 // ---------- WISHLIST ----------
 app.get('/wishlist', checkAuthenticated, wishlistController.getWishlist);
 app.post('/wishlist/add/:id', checkAuthenticated, wishlistController.addToWishlist);
@@ -255,7 +311,11 @@ app.get('/admin', checkAuthenticated, checkAdmin, (req, res) => {
 app.get('/invoice/:orderId', checkAuthenticated, checkAdmin, (req, res) => {
   const orderId = req.params.orderId;
 
-  const orderQuery = 'SELECT * FROM orders WHERE id = ?';
+  const orderQuery = `
+    SELECT o.* 
+    FROM orders o
+    WHERE o.id = ?
+  `;
   const itemsQuery = `
     SELECT oi.*, p.productName, p.image
     FROM order_items oi
@@ -292,9 +352,156 @@ app.get('/invoice/:orderId', checkAuthenticated, checkAdmin, (req, res) => {
     });
   });
 });
+
+// ---------- PAYPAL API ----------
+app.post('/api/paypal/create-order', async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const order = await paypal.createOrder(amount);
+    if (order && order.id) {
+      res.json({ id: order.id });
+    } else {
+      res.status(500).json({ error: 'Failed to create PayPal order', details: order });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create PayPal order', message: err.message });
+  }
+});
+
+app.post('/api/paypal/capture-order', async (req, res) => {
+  try {
+    console.log('\n>>> POST /api/paypal/capture-order received');
+    const { orderID, localOrderId } = req.body; // localOrderId = your MySQL order.id
+    console.log('Request body:', { orderID, localOrderId });
+    
+    console.log('Calling paypal.captureOrder with orderID:', orderID);
+    const capture = await paypal.captureOrder(orderID);
+    
+    console.log('PayPal captureOrder response received:', {
+      status: capture.status,
+      id: capture.id,
+      httpStatusCode: capture.httpStatusCode
+    });
+
+    if (capture.status === 'COMPLETED') {
+      console.log('Payment status is COMPLETED. Delegating to orderController.payWithPaypal\n');
+      // Delegate to a controller method that marks your supermarket order as paid
+      await orderController.payWithPaypal(req, res, capture, localOrderId);
+    } else {
+      const msg = 'Payment not completed. Status: ' + capture.status;
+      console.error('ERROR: ' + msg);
+      console.error('Full response:', capture);
+      res.status(400).json({ 
+        error: msg,
+        details: capture,
+        received_status: capture.status
+      });
+    }
+  } catch (err) {
+    console.error('EXCEPTION in /api/paypal/capture-order:', {
+      message: err.message,
+      stack: err.stack,
+      code: err.code
+    });
+    res.status(500).json({ 
+      error: 'Failed to capture PayPal order', 
+      message: err.message,
+      exception: true
+    });
+  }
+});
+
 // ---------- USER INVOICE ----------
 app.get('/my-invoice/:orderId', checkAuthenticated, orderController.getUserInvoice);
 
+//-----------Nets QR code payment-----------
+app.post('/generateNETSQR', netsQr.generateQrCode);
+
+app.get("/nets-qr/success", checkAuthenticated, (req, res) => {
+    // For GET request, we need to set paymentMethod via body manually
+    // because GET requests don't have a traditional body
+    req.body = { paymentMethod: 'NETS' };
+    // Call controller to create order and show success page
+    orderController.netsQrSuccess(req, res);
+});
+
+app.get("/nets-qr/fail", (req, res) => {
+    res.render('netsTxnFailStatus', { message: 'Transaction Failed. Please try again.' });
+})
+
+app.get('/401', (req, res) => {
+    res.render('401', { errors: req.flash('error') });
+});
+
+app.get('/sse/payment-status/:txnRetrievalRef', async (req, res) => {
+    res.set({
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+    });
+
+    const txnRetrievalRef = req.params.txnRetrievalRef;
+    let pollCount = 0;
+    const maxPolls = 60; // 5 minutes if polling every 5s
+    let frontendTimeoutStatus = 0;
+
+    const interval = setInterval(async () => {
+        pollCount++;
+
+        try {
+            // Call the NETS query API
+            const response = await axios.post(
+                'https://sandbox.nets.openapipaas.com/api/v1/common/payments/nets-qr/query',
+                { txn_retrieval_ref: txnRetrievalRef, frontend_timeout_status: frontendTimeoutStatus },
+                {
+                    headers: {
+                        'api-key': process.env.API_KEY,
+                        'project-id': process.env.PROJECT_ID,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            console.log("Polling response:", response.data);
+            // Send the full response to the frontend
+            res.write(`data: ${JSON.stringify(response.data)}\n\n`);
+        
+          const resData = response.data.result.data;
+
+            // Decide when to end polling and close the connection
+            //Check if payment is successful
+            if (resData.response_code == "00" && resData.txn_status === 1) {
+                // Payment success: send a success message
+                res.write(`data: ${JSON.stringify({ success: true })}\n\n`);
+                clearInterval(interval);
+                res.end();
+            } else if (frontendTimeoutStatus == 1 && resData && (resData.response_code !== "00" || resData.txn_status === 2)) {
+                // Payment failure: send a fail message
+                res.write(`data: ${JSON.stringify({ fail: true, ...resData })}\n\n`);
+                clearInterval(interval);
+                res.end();
+            }
+
+        } catch (err) {
+            clearInterval(interval);
+            res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+            res.end();
+        }
+
+
+        // Timeout
+        if (pollCount >= maxPolls) {
+            clearInterval(interval);
+            frontendTimeoutStatus = 1;
+            res.write(`data: ${JSON.stringify({ fail: true, error: "Timeout" })}\n\n`);
+            res.end();
+        }
+    }, 5000);
+
+    req.on('close', () => {
+        clearInterval(interval);
+    });
+});
 
 // ==================================================
 // SERVER START
