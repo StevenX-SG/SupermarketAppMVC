@@ -164,6 +164,10 @@ app.post('/profile', (req, res) => {
   profileController.updateProfile(req, res);
 });
 
+// ---------- LOYALTY POINTS & COINS ----------
+// Convert loyalty points to coins
+app.post('/api/loyalty/convert-points', checkAuthenticated, userController.convertPointsToCoin);
+
 // ---------- USERS (ADMIN) ----------
 app.get('/users', checkAuthenticated, checkAdmin, userController.getAllUsers);
 app.get('/users/add', checkAuthenticated, checkAdmin, userController.showAddForm);
@@ -438,15 +442,25 @@ app.post('/api/paypal/create-order', async (req, res) => {
     const { amount, currency } = req.body;
     const paymentCurrency = currency || 'SGD';
     
-    console.log('[PAYPAL API] Creating order:', { amount, currency: paymentCurrency });
+    console.log('[PAYPAL API] Creating order:', { amount, currency: paymentCurrency, amountType: typeof amount });
     
-    const order = await paypal.createOrder(amount, paymentCurrency);
+    if (!amount) {
+      console.error('[PAYPAL API] ✗ No amount provided');
+      return res.status(400).json({ error: 'Amount is required' });
+    }
+    
+    const order = await paypal.createOrder(String(amount), paymentCurrency);
+    console.log('[PAYPAL API] PayPal response:', order);
+    
     if (order && order.id) {
       res.json({ id: order.id });
     } else {
+      console.error('[PAYPAL API] ✗ No order ID in response:', order);
       res.status(500).json({ error: 'Failed to create PayPal order', details: order });
     }
   } catch (err) {
+    console.error('[PAYPAL API] ✗ Error:', err.message);
+    console.error('[PAYPAL API] Stack:', err);
     res.status(500).json({ error: 'Failed to create PayPal order', message: err.message });
   }
 });

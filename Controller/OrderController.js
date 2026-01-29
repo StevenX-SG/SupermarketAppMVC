@@ -229,17 +229,32 @@ function createOrderFromSessionCart(req, callback) {
   }
 
   const subtotal = cart.totalPrice;
+  
+  // Handle coin discount first (applies to subtotal before GST)
+  const coinsToUse = req.body?.coinsToUse ? parseInt(req.body.coinsToUse) : 0;
+  let coinDiscount = 0;
+  let discountedSubtotal = subtotal;
+  
+  if (coinsToUse > 0) {
+    coinDiscount = coinsToUse / 100; // 100 coins = $1
+    discountedSubtotal = Math.max(0, subtotal - coinDiscount); // Apply discount to subtotal
+  }
+  
+  // Calculate GST on the discounted subtotal
   const gstRate = 0.09; // 9% GST
-  const gst = subtotal * gstRate;
-  const totalAmount = subtotal + gst;
+  const gst = discountedSubtotal * gstRate;
+  let totalAmount = discountedSubtotal + gst;
   const pointsEarned = Math.floor(subtotal); // earn 1 point per $1 before GST
-
+  
   console.log('[HELPER] Cart validated. Details:', {
     userId,
     subtotal,
+    coinDiscount,
+    discountedSubtotal,
     gst,
     totalAmount,
     pointsEarned,
+    coinsToUse,
     itemCount: Object.keys(cart.items).length
   });
 
@@ -334,22 +349,28 @@ function createOrderFromSessionCart(req, callback) {
   Order.createOrder(userId, totalAmount, createCallback, paymentMethod);
 
     function finish() {
-      console.log('[HELPER] --- [FINISH: All items processed, updating loyalty points] ---');
+      console.log('[HELPER] --- [FINISH: All items processed, updating loyalty points and coins] ---');
       // 4. Update user loyalty points
       const newPoints = (req.session.user.loyaltyPoints || 0) + pointsEarned;
-      console.log('[HELPER] Step 4: Updating loyalty points', {
+      const newCoinBalance = coinsToUse > 0 
+        ? (req.session.user.coinBalance || 0) - coinsToUse 
+        : (req.session.user.coinBalance || 0);
+      
+      console.log('[HELPER] Step 4: Updating loyalty points and coins', {
         userId,
         currentPoints: req.session.user.loyaltyPoints || 0,
         pointsEarned,
-        newPoints
+        newPoints,
+        coinsUsed: coinsToUse,
+        newCoinBalance
       });
 
       db.query(
-        'UPDATE users SET loyaltyPoints = ? WHERE id = ?',
-        [newPoints, userId],
+        'UPDATE users SET loyaltyPoints = ?, coinBalance = ? WHERE id = ?',
+        [newPoints, newCoinBalance, userId],
         (err5) => {
           if (err5) {
-            console.error('[HELPER] ERROR at Step 4: Loyalty points update failed', {
+            console.error('[HELPER] ERROR at Step 4: Loyalty points/coins update failed', {
               userId,
               error: err5.message,
               code: err5.code,
@@ -357,16 +378,17 @@ function createOrderFromSessionCart(req, callback) {
               sqlState: err5.sqlState
             });
           } else {
-            console.log('[HELPER] ✓ Step 4 complete: Loyalty points updated', { userId, newPoints });
+            console.log('[HELPER] ✓ Step 4 complete: Loyalty points and coins updated', { userId, newPoints, newCoinBalance });
           }
 
           req.session.user.loyaltyPoints = newPoints;
+          req.session.user.coinBalance = newCoinBalance;
           req.session.cart = null;
 
           console.log('[HELPER] === [CART HELPER SUCCESS] ===');
-          console.log('[HELPER] Final result:', { orderId, totalAmount, pointsEarned });
+          console.log('[HELPER] Final result:', { orderId, totalAmount, pointsEarned, coinsUsed: coinsToUse, coinDiscount });
           // done
-          callback(null, { orderId, totalAmount });
+          callback(null, { orderId, totalAmount, coinDiscount, coinsUsed: coinsToUse });
         }
       );
     }

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>FairPrime Market - Profile</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 
 <body>
@@ -40,14 +41,241 @@
 
         <hr class="my-4">
 
-        <h4>
-            Loyalty Points:
-            <strong><%= profile.loyaltyPoints %></strong>
-        </h4>
+        <!-- Loyalty Points & Coins Section -->
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title mb-4">
+                    <i class="fas fa-star" style="color: #ffc107;"></i> Rewards
+                </h5>
+
+                <!-- Loyalty Points -->
+                <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">Loyalty Points</h6>
+                        <span class="badge bg-warning text-dark" style="font-size: 1rem;"><%= profile.loyaltyPoints %> pts</span>
+                    </div>
+                    <p class="text-muted small mb-0">Earn 1 point per dollar spent</p>
+                    <% if (profile.loyaltyPoints > 0) { %>
+                        <button type="button" class="btn btn-sm btn-outline-warning mt-2" data-bs-toggle="modal" data-bs-target="#convertPointsModal">
+                            <i class="fas fa-exchange-alt"></i> Convert to Coins
+                        </button>
+                    <% } %>
+                </div>
+
+                <hr>
+
+                <!-- Coin Balance -->
+                <div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">Coin Balance</h6>
+                        <span class="badge bg-info" style="font-size: 1rem;"><%= profile.coinBalance %> coins</span>
+                    </div>
+                    <p class="text-muted small mb-0">100 coins = $1 discount at checkout</p>
+                    <div class="mt-2">
+                        <small class="text-success">
+                            <strong>Worth:</strong> SGD $<%= (profile.coinBalance / 100).toFixed(2) %>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Box -->
+        <div class="alert alert-info mt-4" style="font-size: 0.9rem;">
+            <strong>💡 How it works:</strong>
+            <ul class="mb-0 mt-2">
+                <li>Collect loyalty points with every purchase</li>
+                <li>Convert points to coins (10 points = 1 coin)</li>
+                <li>Use coins as discount at checkout</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Convert Points Modal -->
+    <div class="modal fade" id="convertPointsModal" tabindex="-1" aria-labelledby="convertPointsLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="convertPointsLabel">
+                        <i class="fas fa-exchange-alt"></i> Convert Loyalty Points to Coins
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info mb-3" style="font-size: 0.9rem;">
+                        <strong>Conversion Rate:</strong> 10 points = 1 coin
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="pointsToConvert" class="form-label">Points to Convert</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="pointsToConvert" min="0" max="<%= profile.loyaltyPoints %>" value="0">
+                            <button class="btn btn-outline-secondary" type="button" id="convertAllBtn">All</button>
+                        </div>
+                        <small class="form-text text-muted d-block mt-1">
+                            You have <strong><%= profile.loyaltyPoints %> points</strong> available
+                        </small>
+                    </div>
+
+                    <div id="conversionPreview" style="display: none; background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+                        <p class="mb-1"><strong>Preview:</strong></p>
+                        <p class="mb-0 small">
+                            <span id="previewPoints">0</span> points → 
+                            <span id="previewCoins">0</span> coins 
+                            (worth $<span id="previewValue">0.00</span>)
+                        </p>
+                    </div>
+
+                    <div class="alert alert-warning" id="insufficientAlert" style="display: none; font-size: 0.9rem;">
+                        Points must be in multiples of 10. You can convert <span id="maxConvertible">0</span> points.
+                    </div>
+
+                    <div class="alert alert-success" id="successMessage" style="display: none; font-size: 0.9rem;">
+                        <strong>Success!</strong> Your conversion is complete. <span id="successDetails"></span>
+                    </div>
+
+                    <div class="alert alert-danger" id="errorMessage" style="display: none; font-size: 0.9rem;">
+                        <strong>Error:</strong> <span id="errorDetails"></span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning" id="convertBtn">
+                        <i class="fas fa-coins"></i> Convert Points
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Footer -->
     <%- include('partials/footer') %>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        const pointsInput = document.getElementById('pointsToConvert');
+        const convertAllBtn = document.getElementById('convertAllBtn');
+        const convertBtn = document.getElementById('convertBtn');
+        const previewSection = document.getElementById('conversionPreview');
+        const previewPoints = document.getElementById('previewPoints');
+        const previewCoins = document.getElementById('previewCoins');
+        const previewValue = document.getElementById('previewValue');
+        const insufficientAlert = document.getElementById('insufficientAlert');
+        const successMessage = document.getElementById('successMessage');
+        const successDetails = document.getElementById('successDetails');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorDetails = document.getElementById('errorDetails');
+        const maxConvertible = document.getElementById('maxConvertible');
+        
+        const userPoints = <%= profile.loyaltyPoints %>;
+
+        // Update preview when input changes
+        pointsInput.addEventListener('input', function() {
+            const points = parseInt(this.value) || 0;
+            const coins = Math.floor(points / 10);
+            const value = coins;
+
+            previewPoints.textContent = points;
+            previewCoins.textContent = coins;
+            previewValue.textContent = (value / 100).toFixed(2);
+
+            if (points > 0) {
+                previewSection.style.display = 'block';
+                insufficientAlert.style.display = 'none';
+            } else {
+                previewSection.style.display = 'none';
+            }
+
+            // Check if points are valid (multiples of 10)
+            if (points > 0 && points % 10 !== 0) {
+                const validPoints = Math.floor(points / 10) * 10;
+                maxConvertible.textContent = validPoints;
+                insufficientAlert.style.display = 'block';
+            } else {
+                insufficientAlert.style.display = 'none';
+            }
+        });
+
+        // Convert all points
+        convertAllBtn.addEventListener('click', function() {
+            pointsInput.value = userPoints;
+            pointsInput.dispatchEvent(new Event('input'));
+        });
+
+        // Convert points button
+        convertBtn.addEventListener('click', async function() {
+            const points = parseInt(pointsInput.value) || 0;
+
+            if (points <= 0) {
+                errorMessage.style.display = 'block';
+                errorDetails.textContent = 'Please enter a valid number of points';
+                return;
+            }
+
+            if (points % 10 !== 0) {
+                errorMessage.style.display = 'block';
+                errorDetails.textContent = 'Points must be in multiples of 10';
+                return;
+            }
+
+            if (points > userPoints) {
+                errorMessage.style.display = 'block';
+                errorDetails.textContent = 'Insufficient loyalty points';
+                return;
+            }
+
+            // Disable button during conversion
+            convertBtn.disabled = true;
+            convertBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Converting...';
+
+            try {
+                const response = await fetch('/api/loyalty/convert-points', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        pointsToConvert: points
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    successMessage.style.display = 'block';
+                    errorMessage.style.display = 'none';
+                    successDetails.innerHTML = `You converted <strong>${data.data.pointsConverted} points</strong> to <strong>${data.data.coinsAdded} coins</strong>!`;
+                    
+                    // Reload page after 2 seconds
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    errorMessage.style.display = 'block';
+                    successMessage.style.display = 'none';
+                    errorDetails.textContent = data.message || 'Conversion failed';
+                }
+            } catch (err) {
+                errorMessage.style.display = 'block';
+                successMessage.style.display = 'none';
+                errorDetails.textContent = err.message || 'An error occurred';
+            } finally {
+                convertBtn.disabled = false;
+                convertBtn.innerHTML = '<i class="fas fa-coins"></i> Convert Points';
+            }
+        });
+
+        // Reset form when modal is hidden
+        document.getElementById('convertPointsModal').addEventListener('hidden.bs.modal', function() {
+            pointsInput.value = 0;
+            previewSection.style.display = 'none';
+            insufficientAlert.style.display = 'none';
+            successMessage.style.display = 'none';
+            errorMessage.style.display = 'none';
+        });
+    </script>
 
 </body>
 </html>

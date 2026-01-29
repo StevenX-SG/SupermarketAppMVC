@@ -75,3 +75,34 @@ exports.deleteUser = (req, res) => {
     res.redirect('/admin');
   });
 };
+
+// Convert loyalty points to coins
+exports.convertPointsToCoin = (req, res) => {
+  const userId = req.session.user?.id;
+  const { pointsToConvert } = req.body;
+
+  if (!userId) {
+    return res.status(401).json({ success: false, message: 'Not authenticated' });
+  }
+
+  if (!pointsToConvert || pointsToConvert <= 0) {
+    return res.status(400).json({ success: false, message: 'Invalid points amount' });
+  }
+
+  User.convertPointsToCoin(userId, parseInt(pointsToConvert), (err, result) => {
+    if (err) {
+      console.error('Error converting points to coins:', err);
+      return res.status(400).json({ success: false, message: err.message });
+    }
+
+    // Update session user data
+    req.session.user.loyaltyPoints = result.remainingPoints;
+    req.session.user.coinBalance = result.newCoinBalance;
+
+    res.json({
+      success: true,
+      message: `Successfully converted ${result.pointsConverted} points to ${result.coinsAdded} coins!`,
+      data: result
+    });
+  });
+};

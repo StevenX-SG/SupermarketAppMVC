@@ -58,18 +58,30 @@
         <% }) %>
       </tbody>
       <tfoot>
-        <% const gst = subtotal * 0.09; %>
+        <% 
+          // First calculate the coin discount from database
+          const baseTotal = subtotal * 1.09; // Original with GST
+          const coinDiscount = baseTotal - (order.totalAmount || baseTotal);
+          const discountedSubtotal = Math.max(0, subtotal - coinDiscount);
+          const gst = discountedSubtotal * 0.09; // GST on discounted subtotal
+        %>
         <tr>
           <td colspan="4" class="text-end"><strong>Subtotal</strong></td>
           <td>$<%= subtotal.toFixed(2) %></td>
         </tr>
+        <% if (coinDiscount > 0.01) { %>
+          <tr style="background-color: #fff3cd;">
+            <td colspan="4" class="text-end"><strong style="color: #856404;">💰 Coin Discount</strong></td>
+            <td><strong style="color: #856404;">-$<%= coinDiscount.toFixed(2) %></strong></td>
+          </tr>
+        <% } %>
         <tr>
           <td colspan="4" class="text-end"><strong>GST (9%)</strong></td>
           <td>$<%= gst.toFixed(2) %></td>
         </tr>
         <tr>
           <td colspan="4" class="text-end"><strong>Grand Total</strong></td>
-          <td><strong>$<%= (subtotal + gst).toFixed(2) %></strong></td>
+          <td><strong>$<%= parseFloat(order.totalAmount || baseTotal).toFixed(2) %></strong></td>
         </tr>
         <tr>
           <td colspan="4" class="text-end text-muted">

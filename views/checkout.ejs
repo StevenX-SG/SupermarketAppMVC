@@ -90,6 +90,39 @@
               <span>$<%= (subtotal * 0.09).toFixed(2) %></span>
             </p>
             <hr>
+            
+            <!-- Coins Discount Section -->
+            <% if (user && user.coinBalance > 0) { %>
+              <div class="border rounded p-3 mb-3" style="background-color: #f0f8ff;">
+                <h6 class="mb-2">
+                  <i class="fas fa-coins" style="color: #ffc107;"></i> Use Coins for Discount
+                </h6>
+                <p class="small text-muted mb-2">You have <strong><%= user.coinBalance %> coins</strong> (worth SGD $<%= (user.coinBalance / 100).toFixed(2) %>)</p>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="number" id="coins-input" name="coinsToUse" min="0" max="<%= user.coinBalance %>" value="0" class="form-control">
+                  <button type="button" id="max-coins-btn" class="btn btn-outline-secondary">Max</button>
+                </div>
+                <small class="text-muted d-block mb-2">100 coins = $1 discount</small>
+                <div id="coin-discount-display" style="display:none;">
+                  <p class="small mb-0">Discount: <span id="coin-discount-value">$0.00</span></p>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="use-coins-checkbox" name="use-coins">
+                  <label class="form-check-label" for="use-coins-checkbox">
+                    Apply coins as discount
+                  </label>
+                </div>
+              </div>
+            <% } else if (user && user.coinBalance === 0 && user.loyaltyPoints > 0) { %>
+              <div class="alert alert-info mb-3" style="font-size: 0.9rem;">
+                <p class="mb-1">
+                  <i class="fas fa-star" style="color: #ffc107;"></i> 
+                  <strong>You have <%= user.loyaltyPoints %> loyalty points!</strong>
+                </p>
+                <small>Convert your points to coins to get discounts. Visit your profile to convert points.</small>
+              </div>
+            <% } %>
+            
             <h5 class="d-flex justify-content-between">
               <span>Total (SGD)</span>
               <span id="checkout-total"
@@ -173,6 +206,7 @@
     <!-- NETS form (outside main form) -->
     <form id="nets-form" action="/generateNETSQR" method="POST" style="display:none;">
       <input type="hidden" id="nets-amount" name="cartTotal" value="">
+      <input type="hidden" id="nets-coins-input" name="coinsToUse" value="0">
     </form>
   </div>
 
@@ -218,6 +252,13 @@
     const totalEl = document.getElementById('checkout-total');
     const totalValue = totalEl.dataset.total;
 
+    // Coins Elements
+    const coinsInput = document.getElementById('coins-input');
+    const maxCoinsBtn = document.getElementById('max-coins-btn');
+    const useCoinsCheckbox = document.getElementById('use-coins-checkbox');
+    const coinDiscountDisplay = document.getElementById('coin-discount-display');
+    const coinDiscountValue = document.getElementById('coin-discount-value');
+    
     // Currency Exchange Elements
     const paymentCurrencySelect = document.getElementById('payment-currency-select');
     const applyCurrencyBtn = document.getElementById('apply-currency-btn');
@@ -228,6 +269,55 @@
     const selectedPaymentCurrency = document.getElementById('selected-payment-currency');
     const selectedPaymentAmount = document.getElementById('selected-payment-amount');
     const selectedFxId = document.getElementById('selected-fx-id');
+    
+    // Initialize payment amount with default total value
+    if (selectedPaymentAmount) {
+      selectedPaymentAmount.value = parseFloat(totalValue).toFixed(2);
+    }
+    const userCoinBalance = <%= user && user.coinBalance ? user.coinBalance : 0 %>;
+
+    // Coins Discount Handler
+    function updateCoinDiscount() {
+      if (!coinsInput || !maxCoinsBtn) return; // Skip if coins elements don't exist
+      
+      const coinsToUse = parseInt(coinsInput.value) || 0;
+      const discount = coinsToUse / 100; // 100 coins = $1
+      
+      if (coinsToUse > 0 && useCoinsCheckbox.checked) {
+        coinDiscountDisplay.style.display = 'block';
+        coinDiscountValue.textContent = '$' + discount.toFixed(2);
+        
+        // Calculate new total
+        const baseTotal = parseFloat(totalValue);
+        const newTotal = Math.max(0, baseTotal - discount);
+        totalEl.textContent = '$' + newTotal.toFixed(2);
+      } else {
+        coinDiscountDisplay.style.display = 'none';
+        totalEl.textContent = '$' + parseFloat(totalValue).toFixed(2);
+      }
+    }
+
+    if (coinsInput) {
+      // Max coins button
+      maxCoinsBtn.addEventListener('click', function() {
+        coinsInput.value = userCoinBalance;
+        updateCoinDiscount();
+      });
+
+      // Coins input change
+      coinsInput.addEventListener('input', function() {
+        // Validate input
+        let value = parseInt(this.value) || 0;
+        if (value > userCoinBalance) {
+          this.value = userCoinBalance;
+          value = userCoinBalance;
+        }
+        updateCoinDiscount();
+      });
+
+      // Use coins checkbox
+      useCoinsCheckbox.addEventListener('change', updateCoinDiscount);
+    }
 
     function updatePaymentUI() {
       const selected = document.querySelector('input[name="paymentMethod"]:checked').value;
@@ -257,7 +347,13 @@
       // If SGD selected, just use original amount
       if (targetCurrency === 'SGD') {
         selectedPaymentCurrency.value = 'SGD';
-        selectedPaymentAmount.value = totalValue;
+        
+        // Apply coin discount if coins are being used
+        const coinsUsed = parseInt(coinsInput?.value || 0);
+        const coinDiscount = (coinsUsed > 0 && useCoinsCheckbox?.checked) ? coinsUsed / 100 : 0;
+        const finalAmount = Math.max(0, parseFloat(totalValue) - coinDiscount);
+        selectedPaymentAmount.value = finalAmount.toFixed(2);
+        
         selectedFxId.value = '';
         currencyConversionDisplay.style.display = 'none';
         currencyError.style.display = 'none';
@@ -305,11 +401,19 @@
         }
 
         // Store selected currency and amount
+        // IMPORTANT: Always send original SGD amount to PayPal for accuracy
+        // PayPal will use its own conversion rate, not our pre-converted amount
         selectedPaymentCurrency.value = targetCurrency;
-        selectedPaymentAmount.value = data.convertedAmount;
+        
+        // Apply coin discount if coins are being used
+        const coinsUsed = parseInt(coinsInput?.value || 0);
+        const coinDiscount = (coinsUsed > 0 && useCoinsCheckbox?.checked) ? coinsUsed / 100 : 0;
+        const finalAmount = Math.max(0, parseFloat(totalValue) - coinDiscount);
+        selectedPaymentAmount.value = finalAmount.toFixed(2);  // Keep as SGD for PayPal
+        
         selectedFxId.value = data.fxId;
 
-        // Display conversion details
+        // Display conversion details (for informational purposes only)
         document.getElementById('original-amount').textContent = data.baseAmount;
         document.getElementById('payment-currency-code').textContent = targetCurrency;
         document.getElementById('payment-amount').textContent = data.convertedAmount;
@@ -341,7 +445,21 @@
     // Handle NETS button click
     netsBtn.addEventListener('click', function(e) {
       e.preventDefault();
-      netsAmount.value = totalValue;
+      
+      // Calculate final amount with coin discount
+      const coinsUsed = parseInt(coinsInput?.value || 0) || 0;
+      const useCoins = useCoinsCheckbox?.checked || false;
+      const coinDiscount = (useCoins && coinsUsed > 0) ? coinsUsed / 100 : 0;
+      const finalAmount = Math.max(0, parseFloat(totalValue) - coinDiscount);
+      
+      netsAmount.value = finalAmount.toFixed(2);
+      
+      // Also add coins value to NETS form
+      const netsCoinsInput = document.getElementById('nets-coins-input');
+      if (netsCoinsInput) {
+        netsCoinsInput.value = coinsUsed;
+      }
+      
       netsForm.submit();
     });
 
@@ -355,6 +473,31 @@
 
     methodRadios.forEach(r => r.addEventListener('change', updatePaymentUI));
     updatePaymentUI();
+
+    // Handle form submission - ensure coins are only sent if checkbox is checked
+    document.getElementById('checkout-form').addEventListener('submit', function(e) {
+      if (!coinsInput) return; // Skip if coins elements don't exist
+      
+      if (!useCoinsCheckbox.checked) {
+        coinsInput.value = 0; // Clear coins if checkbox is unchecked
+      }
+      
+      // Update payment amount for PayPal/NETS with coin discount
+      const coinsUsed = parseInt(coinsInput.value) || 0;
+      const coinDiscount = coinsUsed > 0 ? coinsUsed / 100 : 0;
+      const baseTotal = parseFloat(totalValue);
+      const finalTotal = Math.max(0, baseTotal - coinDiscount);
+      
+      // Update hidden input if it exists
+      if (selectedPaymentAmount) {
+        selectedPaymentAmount.value = finalTotal.toFixed(2);
+      }
+      
+      // Update NETS amount if it exists
+      if (netsAmount) {
+        netsAmount.value = finalTotal.toFixed(2);
+      }
+    });
 
     // Render PayPal button function
     function renderPayPalButton() {
@@ -374,11 +517,12 @@
         paypal.Buttons({
           createOrder: function (data, actions) {
             // Use selected payment amount (in selected currency) for PayPal order
-            const paymentAmount = selectedPaymentAmount.value || totalValue;
+            const paymentAmount = String(selectedPaymentAmount.value || totalValue);
             const paymentCurrency = selectedPaymentCurrency.value || 'SGD';
             
             console.log('[CLIENT] Creating PayPal order with:', {
               amount: paymentAmount,
+              amountType: typeof paymentAmount,
               currency: paymentCurrency
             });
             
@@ -391,13 +535,22 @@
                 amount: paymentAmount,
                 currency: paymentCurrency
               })
-            }).then(res => res.json())
+            }).then(res => {
+              console.log('[CLIENT] Fetch response status:', res.status);
+              return res.json().then(data => {
+                console.log('[CLIENT] Fetch response data:', data);
+                if (res.status !== 200) {
+                  throw new Error(data.error || data.message || 'Failed to create PayPal order');
+                }
+                return data;
+              });
+            })
               .then(data => {
                 if (data.id) {
                   console.log('[CLIENT] Order created, ID:', data.id);
                   return data.id;
                 } else {
-                  throw new Error(data.error || 'Failed to create PayPal order');
+                  throw new Error(data.error || data.message || 'Failed to create PayPal order');
                 }
               });
           },
@@ -415,7 +568,8 @@
                   paypalOrderId: data.orderID,
                   paymentCurrency: selectedPaymentCurrency.value,
                   paymentAmount: selectedPaymentAmount.value,
-                  fxId: selectedFxId.value
+                  fxId: selectedFxId.value,
+                  coinsToUse: parseInt(coinsInput?.value || 0)
                 })
               }).then(response => {
                 console.log('[CLIENT] Response status:', response.status);
