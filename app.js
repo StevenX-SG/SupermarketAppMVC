@@ -17,6 +17,7 @@ const profileController = require('./Controller/profileController');
 const orderController = require('./Controller/OrderController');
 const wishlistController = require('./Controller/WishlistController');
 const paypal = require('./services/paypal');
+const { createExchangeClient } = require('./services/paypal-currency-exchange');
 
 // MIDDLEWARE
 const {
@@ -214,6 +215,80 @@ app.post('/checkout', checkAuthenticated, orderController.createOrderFromCart);
 // ---------- ORDERS ----------
 app.get('/orders', checkAuthenticated, orderController.getOrdersByUser);
 app.get('/orders/:id', checkAuthenticated, orderController.getOrderDetails);
+
+// ========== PayPal Payment Success Page ==========
+app.get('/payment-success', checkAuthenticated, (req, res) => {
+  const { orderId, transactionId, amount, paymentMethod, paymentCurrency } = req.query;
+  
+  console.log('[PAYMENT SUCCESS PAGE] Rendering success page:', {
+    orderId,
+    transactionId: transactionId ? transactionId.substring(0, 20) + '...' : 'N/A',
+    amount,
+    paymentMethod,
+    paymentCurrency: paymentCurrency || 'SGD'
+  });
+
+  // Calculate estimated delivery (3-5 business days)
+  const estimatedDelivery = new Date();
+  estimatedDelivery.setDate(estimatedDelivery.getDate() + 4); // 4 days from now
+  const deliveryDateStr = estimatedDelivery.toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
+
+  // Fetch order details to get item count
+  if (orderId) {
+    const itemCountQuery = `
+      SELECT COUNT(*) as itemCount, SUM(quantity) as totalQuantity
+      FROM order_items
+      WHERE orderId = ?
+    `;
+    
+    db.query(itemCountQuery, [orderId], (err, results) => {
+      const itemCount = results && results[0] ? results[0].totalQuantity || 0 : 0;
+      
+      res.render('paymentSuccess', {
+        orderId: orderId || null,
+        transactionId: transactionId || null,
+        amount: amount || null,
+        paymentMethod: paymentMethod || 'unknown',
+        paymentCurrency: paymentCurrency || 'SGD',
+        itemCount: itemCount,
+        estimatedDelivery: deliveryDateStr,
+        orderDate: new Date()
+      });
+    });
+  } else {
+    res.render('paymentSuccess', {
+      orderId: orderId || null,
+      transactionId: transactionId || null,
+      amount: amount || null,
+      paymentMethod: paymentMethod || 'unknown',
+      paymentCurrency: paymentCurrency || 'SGD',
+      itemCount: 0,
+      estimatedDelivery: deliveryDateStr,
+      orderDate: new Date()
+    });
+  }
+});
+
+// ========== PayPal Payment Failed/Cancelled Page ==========
+app.get('/payment-failed', checkAuthenticated, (req, res) => {
+  const { reason, errorMessage, transactionId } = req.query;
+  
+  console.log('[PAYMENT FAILED PAGE] Rendering failure page:', {
+    reason: reason || 'Unknown',
+    transactionId: transactionId ? transactionId.substring(0, 20) + '...' : 'N/A'
+  });
+
+  res.render('paymentFailed', {
+    reason: reason || 'Payment could not be processed',
+    errorMessage: errorMessage || 'Please check your payment details and try again',
+    transactionId: transactionId || null
+  });
+});
+
 // PayPal capture callback
 app.post('/orders/paypal-complete', async (req, res) => {
   try {
@@ -223,16 +298,22 @@ app.post('/orders/paypal-complete', async (req, res) => {
     // Check authentication
     if (!req.session || !req.session.user) {
       console.error('[ROUTE] ✗ No valid session');
-      return res.status(401).json({ error: 'Not authenticated. Please log in first.' });
+      return res.redirect('/payment-failed?reason=Not%20authenticated&errorMessage=Please%20log%20in%20first');
     }
     
+    // Extract payment info including currency
+    const { paypalOrderId, paymentCurrency, paymentAmount, fxId } = req.body;
+    
+    console.log('[ROUTE] Payment Currency:', paymentCurrency || 'SGD');
+    console.log('[ROUTE] Payment Amount:', paymentAmount);
+    
+
     console.log('[ROUTE] req.body:', req.body);
     console.log('[ROUTE] req.session.cart items:', req.session.cart ? Object.keys(req.session.cart.items).length : 0);
     
-    const { paypalOrderId } = req.body;
     if (!paypalOrderId) {
       console.error('[ROUTE] ERROR: No paypalOrderId in request body');
-      return res.status(400).json({ error: 'Missing paypalOrderId' });
+      return res.redirect('/payment-failed?reason=Invalid%20Request&errorMessage=Missing%20PayPal%20order%20ID');
     }
     
     console.log('[ROUTE] Browser already captured the payment. Fetching order details to get capture info...');
@@ -243,14 +324,11 @@ app.post('/orders/paypal-complete', async (req, res) => {
     
     if (orderDetails.status !== 'COMPLETED') {
       console.error('[ROUTE] ✗ Order not completed. Status:', orderDetails.status);
-      return res.status(400).json({ 
-        error: 'Order not completed',
-        received_status: orderDetails.status,
-        details: orderDetails
-      });
+      return res.redirect(`/payment-failed?reason=Order%20Not%20Completed&errorMessage=PayPal%20order%20status%3A%20${orderDetails.status}&transactionId=${paypalOrderId}`);
     }
     
     console.log('[ROUTE] Delegating to orderController.payWithPaypal with order details containing capture info');
+    // Pass response object with success/failure handlers
     orderController.payWithPaypal(req, res, orderDetails);
   } catch (err) {
     console.error('[ROUTE] CATCH ERROR in /orders/paypal-complete:', {
@@ -258,9 +336,10 @@ app.post('/orders/paypal-complete', async (req, res) => {
       stack: err.stack,
       code: err.code
     });
-    res.status(500).json({ error: 'Internal server error', details: err.message });
+    res.redirect(`/payment-failed?reason=Server%20Error&errorMessage=${encodeURIComponent(err.message)}`);
   }
 });
+
 // Admin: update order status
 app.post('/orders/updateStatus/:id',checkAuthenticated,checkAdmin,orderController.updateOrderStatus);
 app.post('/orders/delete/:id',checkAuthenticated,checkAdmin,orderController.deleteOrder);
@@ -356,8 +435,12 @@ app.get('/invoice/:orderId', checkAuthenticated, checkAdmin, (req, res) => {
 // ---------- PAYPAL API ----------
 app.post('/api/paypal/create-order', async (req, res) => {
   try {
-    const { amount } = req.body;
-    const order = await paypal.createOrder(amount);
+    const { amount, currency } = req.body;
+    const paymentCurrency = currency || 'SGD';
+    
+    console.log('[PAYPAL API] Creating order:', { amount, currency: paymentCurrency });
+    
+    const order = await paypal.createOrder(amount, paymentCurrency);
     if (order && order.id) {
       res.json({ id: order.id });
     } else {
@@ -501,6 +584,139 @@ app.get('/sse/payment-status/:txnRetrievalRef', async (req, res) => {
     req.on('close', () => {
         clearInterval(interval);
     });
+});
+
+// ---------- PAYPAL CURRENCY EXCHANGE ----------
+app.post('/api/paypal/exchange-rate', async (req, res) => {
+  try {
+    console.log('\n[ROUTE] POST /api/paypal/exchange-rate received');
+    
+    const { baseCurrency, targetCurrency, amount } = req.body;
+    
+    if (!baseCurrency || !targetCurrency || !amount) {
+      console.error('[ROUTE] Missing required parameters');
+      return res.status(400).json({ 
+        error: 'Missing required parameters: baseCurrency, targetCurrency, amount' 
+      });
+    }
+
+    console.log('[ROUTE] Fetching exchange rate:', { baseCurrency, targetCurrency, amount });
+
+    // Create exchange client with fresh access token
+    const exchangeClient = await createExchangeClient();
+    
+    // Get exchange rate
+    const result = await exchangeClient.getExchangeRate(baseCurrency, targetCurrency, amount.toString());
+
+    if (!result.success) {
+      console.error('[ROUTE] ✗ Failed to get exchange rate:', result.error);
+      console.error('[ROUTE] Full result:', result);
+      return res.status(500).json({ 
+        error: result.error,
+        details: result.response || result
+      });
+    }
+
+    console.log('[ROUTE] ✓ Exchange rate retrieved successfully');
+    console.log('[ROUTE] Rate:', result.exchangeRate);
+
+    res.json(result);
+  } catch (err) {
+    console.error('[ROUTE] ERROR in /api/paypal/exchange-rate:', {
+      message: err.message,
+      stack: err.stack
+    });
+    res.status(500).json({ 
+      error: 'Failed to get exchange rate',
+      message: err.message
+    });
+  }
+});
+
+app.post('/api/paypal/create-exchange-quote', async (req, res) => {
+  try {
+    console.log('\n[ROUTE] POST /api/paypal/create-exchange-quote received');
+    
+    const { baseCurrency, baseAmount, quoteCurrency, markupPercent } = req.body;
+    
+    if (!baseCurrency || !baseAmount || !quoteCurrency) {
+      console.error('[ROUTE] Missing required parameters');
+      return res.status(400).json({ 
+        error: 'Missing required parameters: baseCurrency, baseAmount, quoteCurrency' 
+      });
+    }
+
+    console.log('[ROUTE] Creating exchange quote:', { baseCurrency, baseAmount, quoteCurrency });
+
+    // Create exchange client with fresh access token
+    const exchangeClient = await createExchangeClient();
+    
+    // Create quote
+    const result = await exchangeClient.createExchangeQuote({
+      baseCurrency,
+      baseAmount: baseAmount.toString(),
+      quoteCurrency,
+      markupPercent: markupPercent || '0'
+    });
+
+    if (!result.success) {
+      console.error('[ROUTE] ✗ Failed to create exchange quote:', result.error);
+      return res.status(500).json({ error: result.error });
+    }
+
+    console.log('[ROUTE] ✓ Exchange quote created successfully');
+    console.log('[ROUTE] Quote ID:', result.id);
+
+    res.json(result);
+  } catch (err) {
+    console.error('[ROUTE] ERROR in /api/paypal/create-exchange-quote:', {
+      message: err.message,
+      stack: err.stack
+    });
+    res.status(500).json({ 
+      error: 'Failed to create exchange quote',
+      message: err.message
+    });
+  }
+});
+
+app.get('/api/paypal/exchange-quote/:fxId', async (req, res) => {
+  try {
+    console.log('\n[ROUTE] GET /api/paypal/exchange-quote/:fxId received');
+    
+    const { fxId } = req.params;
+    
+    if (!fxId) {
+      console.error('[ROUTE] Missing FX ID');
+      return res.status(400).json({ error: 'FX ID is required' });
+    }
+
+    console.log('[ROUTE] Retrieving exchange quote:', fxId);
+
+    // Create exchange client with fresh access token
+    const exchangeClient = await createExchangeClient();
+    
+    // Get quote
+    const result = await exchangeClient.getExchangeQuote(fxId);
+
+    if (!result.success) {
+      console.error('[ROUTE] ✗ Failed to get exchange quote:', result.error);
+      return res.status(500).json({ error: result.error });
+    }
+
+    console.log('[ROUTE] ✓ Exchange quote retrieved successfully');
+
+    res.json(result);
+  } catch (err) {
+    console.error('[ROUTE] ERROR in /api/paypal/exchange-quote/:fxId:', {
+      message: err.message,
+      stack: err.stack
+    });
+    res.status(500).json({ 
+      error: 'Failed to get exchange quote',
+      message: err.message
+    });
+  }
 });
 
 // ==================================================

@@ -233,18 +233,26 @@ exports.markPaidWithPaypal = (orderId, paypalOrderId, callback) => {
 };
 
 // === Create transaction (PayPal payment record) ===
-exports.createTransaction = (orderId, payerId, payerEmail, amount, currency, paypalStatus, paypalOrderId, captureId, callback) => {
-  // Handle backward compatibility - if callback is passed as 8th arg (no captureId)
+exports.createTransaction = (orderId, payerId, payerEmail, amount, currency, paypalStatus, paypalOrderId, captureId, paymentCurrency, callback) => {
+  // Handle backward compatibility
+  if (typeof paymentCurrency === 'function') {
+    callback = paymentCurrency;
+    paymentCurrency = null;
+  }
   if (typeof captureId === 'function') {
     callback = captureId;
     captureId = null;
+    paymentCurrency = null;
   }
 
+  // Use paymentCurrency if provided, otherwise use currency
+  const storedPaymentCurrency = paymentCurrency || currency || 'SGD';
+
   const sql = captureId 
-    ? `INSERT INTO transactions (orderId, payerId, payerEmail, amount, currency, status, paypalOrderId, captureId, time)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-    : `INSERT INTO transactions (orderId, payerId, payerEmail, amount, currency, status, paypalOrderId, time)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`;
+    ? `INSERT INTO transactions (orderId, payerId, payerEmail, amount, currency, payment_currency, status, paypalOrderId, captureId, time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+    : `INSERT INTO transactions (orderId, payerId, payerEmail, amount, currency, payment_currency, status, paypalOrderId, time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
   
   console.log('[Order.createTransaction] Executing INSERT (PayPal transaction):', {
     orderId,
@@ -252,6 +260,7 @@ exports.createTransaction = (orderId, payerId, payerEmail, amount, currency, pay
     payerEmail,
     amount,
     currency,
+    payment_currency: storedPaymentCurrency,
     paypalStatus,
     paypalOrderId,
     captureId: captureId || 'NULL',
@@ -259,8 +268,8 @@ exports.createTransaction = (orderId, payerId, payerEmail, amount, currency, pay
   });
   
   const params = captureId 
-    ? [orderId, payerId, payerEmail, amount, currency, paypalStatus, paypalOrderId, captureId]
-    : [orderId, payerId, payerEmail, amount, currency, paypalStatus, paypalOrderId];
+    ? [orderId, payerId, payerEmail, amount, currency, storedPaymentCurrency, paypalStatus, paypalOrderId, captureId]
+    : [orderId, payerId, payerEmail, amount, currency, storedPaymentCurrency, paypalStatus, paypalOrderId];
 
   db.query(sql, params, (err, result) => {
     if (err) {
@@ -277,6 +286,7 @@ exports.createTransaction = (orderId, payerId, payerEmail, amount, currency, pay
       orderId,
       transactionId: result.insertId,
       affectedRows: result.affectedRows,
+      payment_currency: storedPaymentCurrency,
       captureIdStored: captureId || 'NULL'
     });
     callback(null, result);

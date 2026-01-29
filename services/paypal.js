@@ -18,8 +18,14 @@ async function getAccessToken() {
   return data.access_token;
 }
 
-async function createOrder(amount) {
+async function createOrder(amount, currencyCode = 'SGD') {
   const accessToken = await getAccessToken();
+  
+  console.log('[PayPal.createOrder] Creating order with:', {
+    amount,
+    currencyCode
+  });
+  
   const response = await fetch(`${PAYPAL_API}/v2/checkout/orders`, {
     method: 'POST',
     headers: {
@@ -30,13 +36,21 @@ async function createOrder(amount) {
       intent: 'CAPTURE',
       purchase_units: [{
         amount: {
-          currency_code: 'SGD',
+          currency_code: currencyCode,
           value: amount
         }
       }]
     })
   });
-  return await response.json();
+  
+  const data = await response.json();
+  console.log('[PayPal.createOrder] Order created:', {
+    orderId: data.id,
+    currency: currencyCode,
+    amount
+  });
+  
+  return data;
 }
 
 // Get order details (including already-captured payment info)
@@ -84,6 +98,12 @@ async function captureOrder(orderId) {
   console.log(JSON.stringify(data, null, 2));
   console.log('[PayPal.captureOrder] ═══════════════════════════════════════════\n');
   
+  // Extract and log currency code from response
+  if (data.purchase_units?.[0]?.amount?.currency_code) {
+    console.log('[PayPal.captureOrder] ✓ Currency Code from response:', data.purchase_units[0].amount.currency_code);
+    data.responsePaymentCurrency = data.purchase_units[0].amount.currency_code;
+  }
+  
   // Inspect the actual structure
   console.log('[PayPal.captureOrder] Analyzing response structure:');
   console.log('[PayPal.captureOrder] Top-level keys:', Object.keys(data || {}));
@@ -126,7 +146,7 @@ async function captureOrder(orderId) {
 }
 
 // Refund a captured payment using captureId (direct method)
-async function refundCapture(captureId, amount) {
+async function refundCapture(captureId, amount, currencyCode = 'SGD') {
   try {
     console.log('[PayPal.refundCapture] ╔════════════════════════════════════╗');
     console.log('[PayPal.refundCapture] ║ PAYPAL REFUND REQUEST INITIATED   ║');
@@ -134,7 +154,7 @@ async function refundCapture(captureId, amount) {
     console.log('[PayPal.refundCapture] Input parameters:', { 
       captureId, 
       amount,
-      currency: 'SGD'
+      currency: currencyCode
     });
     
     const accessToken = await getAccessToken();
@@ -149,7 +169,7 @@ async function refundCapture(captureId, amount) {
       },
       body: JSON.stringify({
         amount: {
-          currency_code: 'SGD',
+          currency_code: currencyCode,
           value: amount.toString()
         }
       })

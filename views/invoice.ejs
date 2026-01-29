@@ -22,6 +22,9 @@
       <% if (order && order.paymentMethod) { %>
         <p><strong>Payment Method:</strong> <%= order.paymentMethod %></p>
       <% } %>
+      <% if (paymentCurrency && paymentCurrency !== 'SGD') { %>
+        <p><strong>Payment Currency:</strong> <span style="color: #0066cc; font-weight: bold;"><%= paymentCurrency %></span></p>
+      <% } %>
     </div>
 
     <table class="table table-bordered text-center align-middle">
@@ -70,12 +73,18 @@
         </tr>
         <tr>
           <td colspan="4" class="text-end text-muted">
-            <small>Total stored in DB</small>
+            <small>Total in DB</small>
           </td>
           <td class="text-muted">
             <small>$<%= Number(order.totalAmount || 0).toFixed(2) %></small>
           </td>
         </tr>
+        <% if (paymentCurrency && paymentCurrency !== 'SGD') { %>
+          <tr style="background-color: #e7f3ff;">
+            <td colspan="4" class="text-end"><strong style="color: #0066cc;">Amount Paid in <%= paymentCurrency %></strong></td>
+            <td><strong style="color: #0066cc;"><%= paymentCurrency %> <%= parseFloat(paidAmount).toFixed(2) %></strong></td>
+          </tr>
+        <% } %>
       </tfoot>
     </table>
 

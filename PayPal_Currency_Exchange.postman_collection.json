@@ -1,0 +1,203 @@
+{
+  "info": {
+    "name": "PayPal Currency Exchange API",
+    "description": "PayPal Currency Exchange API collection for testing exchange rates and quotes",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Exchange Rate",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"baseCurrency\": \"SGD\",\n  \"targetCurrency\": \"USD\",\n  \"amount\": \"100.00\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/api/paypal/exchange-rate",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "api",
+            "paypal",
+            "exchange-rate"
+          ]
+        },
+        "description": "Get current exchange rate between two currencies. Returns conversion rate, converted amount, and FX ID (valid for ~10 minutes)."
+      },
+      "response": [
+        {
+          "name": "Success Response",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"baseCurrency\": \"SGD\",\n  \"targetCurrency\": \"USD\",\n  \"amount\": \"100.00\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/paypal/exchange-rate",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "paypal",
+                "exchange-rate"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"baseCurrency\": \"SGD\",\n  \"targetCurrency\": \"USD\",\n  \"baseAmount\": \"100.00\",\n  \"convertedAmount\": \"74.50\",\n  \"exchangeRate\": \"0.745000\",\n  \"fxId\": \"fx_201901021042_1a2b3c4d5e6f\",\n  \"expirationTime\": \"2026-01-28T12:15:00Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Create Exchange Quote",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"baseCurrency\": \"SGD\",\n  \"baseAmount\": \"1.96\",\n  \"quoteCurrency\": \"USD\",\n  \"markupPercent\": \"0\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/api/paypal/create-exchange-quote",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "api",
+            "paypal",
+            "create-exchange-quote"
+          ]
+        },
+        "description": "Create an exchange quote that can be locked in for payment. Quote is valid for ~10 minutes."
+      },
+      "response": [
+        {
+          "name": "Success Response",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"baseCurrency\": \"SGD\",\n  \"baseAmount\": \"1.96\",\n  \"quoteCurrency\": \"USD\",\n  \"markupPercent\": \"0\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/paypal/create-exchange-quote",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "paypal",
+                "create-exchange-quote"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"id\": \"fx_201901021042_1a2b3c4d5e6f\",\n  \"quoteItems\": [\n    {\n      \"base_currency\": \"SGD\",\n      \"base_amount\": \"1.96\",\n      \"quote_currency\": \"USD\",\n      \"converted_amount\": \"1.46\",\n      \"markup_percent\": \"0\",\n      \"exchange_rate\": \"0.745000\"\n    }\n  ],\n  \"expirationTime\": \"2026-01-28T12:15:00Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Get Exchange Quote by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/api/paypal/exchange-quote/fx_201901021042_1a2b3c4d5e6f",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "api",
+            "paypal",
+            "exchange-quote",
+            "fx_201901021042_1a2b3c4d5e6f"
+          ]
+        },
+        "description": "Retrieve a previously created exchange quote by its FX ID to verify rates before payment."
+      },
+      "response": [
+        {
+          "name": "Success Response",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/paypal/exchange-quote/fx_201901021042_1a2b3c4d5e6f",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "paypal",
+                "exchange-quote",
+                "fx_201901021042_1a2b3c4d5e6f"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"id\": \"fx_201901021042_1a2b3c4d5e6f\",\n  \"quoteItems\": [\n    {\n      \"base_currency\": \"SGD\",\n      \"base_amount\": \"1.96\",\n      \"quote_currency\": \"USD\",\n      \"converted_amount\": \"1.46\",\n      \"exchange_rate\": \"0.745000\"\n    }\n  ],\n  \"expirationTime\": \"2026-01-28T12:15:00Z\"\n}"
+        }
+      ]
+    }
+  ]
+}

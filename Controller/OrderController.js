@@ -140,12 +140,16 @@ exports.approveRefund = (req, res) => {
         console.log('[Admin.approveRefund]   Calling PayPal refund API with:');
         console.log('[Admin.approveRefund]   - captureId:', transaction.captureId);
         console.log('[Admin.approveRefund]   - amount:', transaction.amount);
-        console.log('[Admin.approveRefund]   - currency: SGD');
+        console.log('[Admin.approveRefund]   - currency:', transaction.payment_currency || transaction.currency || 'SGD');
         
         try {
+          // Use payment_currency if available (user's selected currency), otherwise fall back to captured currency or SGD
+          const refundCurrency = transaction.payment_currency || transaction.currency || 'SGD';
+          
           paypalRefundResult = await paypalService.refundCapture(
             transaction.captureId,
-            transaction.amount
+            transaction.amount,
+            refundCurrency
           );
 
           if (paypalRefundResult.success) {
@@ -478,6 +482,11 @@ exports.getUserInvoice = (req, res) => {
     JOIN products p ON oi.productId = p.id
     WHERE orderId = ?
   `;
+  const transactionQuery = `
+    SELECT payment_currency, amount
+    FROM transactions
+    WHERE orderId = ?
+  `;
 
   db.query(orderQuery, [orderId, userId], (err, orderRows) => {
     if (err || !orderRows.length) return res.send('Order not found');
@@ -487,22 +496,31 @@ exports.getUserInvoice = (req, res) => {
     db.query(itemsQuery, [orderId], (err2, items) => {
       if (err2) return res.send('Error loading order items');
 
-      let subtotal = 0;
-      (items || []).forEach(it => {
-        subtotal += Number(it.price) * Number(it.quantity);
-      });
+      // Fetch transaction details for payment currency
+      db.query(transactionQuery, [orderId], (err3, transactionRows) => {
+        const transaction = transactionRows && transactionRows[0] ? transactionRows[0] : null;
+        const paymentCurrency = transaction?.payment_currency || 'SGD';
+        const paidAmount = transaction?.amount || order.totalAmount;
 
-      const gstRate = 0.09;
-      const gst = subtotal * gstRate;
-      const grandTotal = subtotal + gst;
+        let subtotal = 0;
+        (items || []).forEach(it => {
+          subtotal += Number(it.price) * Number(it.quantity);
+        });
 
-      res.render('invoice', {
-        order,
-        items,
-        subtotal,
-        gst,
-        grandTotal,
-        user: req.session.user
+        const gstRate = 0.09;
+        const gst = subtotal * gstRate;
+        const grandTotal = subtotal + gst;
+
+        res.render('invoice', {
+          order,
+          items,
+          subtotal,
+          gst,
+          grandTotal,
+          paymentCurrency,
+          paidAmount,
+          user: req.session.user
+        });
       });
     });
   });
@@ -520,6 +538,14 @@ exports.payWithPaypal = (req, res, capture) => {
   console.log('[PAYPAL HANDLER] User ID:', req.session.user?.id);
   console.log('[PAYPAL HANDLER] Cart items count:', req.session.cart ? Object.keys(req.session.cart.items).length : 0);
 
+  // Extract payment currency from request body (sent by frontend)
+  const paymentCurrency = req.body?.paymentCurrency || 'SGD';
+  const paymentAmount = req.body?.paymentAmount || null;
+  const fxId = req.body?.fxId || null;
+  console.log('[PAYPAL HANDLER] Payment Currency from frontend:', paymentCurrency);
+  console.log('[PAYPAL HANDLER] Payment Amount from frontend:', paymentAmount);
+  console.log('[PAYPAL HANDLER] FX Quote ID:', fxId);
+
   // Set payment method to PayPal before creating order
   req.body = req.body || {};
   req.body.paymentMethod = 'PayPal';
@@ -534,10 +560,7 @@ exports.payWithPaypal = (req, res, capture) => {
         code: err.code,
         stack: err.stack
       });
-      return res.status(500).json({ 
-        error: 'Error creating PayPal order in system',
-        details: err.message
-      });
+      return res.redirect(`/payment-failed?reason=Order%20Creation%20Failed&errorMessage=${encodeURIComponent(err.message)}&transactionId=${encodeURIComponent(paypalOrderId || 'N/A')}`);
     }
 
     const orderId = result.orderId;
@@ -647,7 +670,7 @@ exports.payWithPaypal = (req, res, capture) => {
       console.log('[PAYPAL HANDLER] ✓✓✓ captureId verified - PayPal refunds will be ENABLED for this order');
     }
     
-    // 3. Create transaction record (including captureId for later refunds)
+    // 3. Create transaction record (including captureId for later refunds and payment currency)
     Order.createTransaction(
       orderId, 
       payerId, 
@@ -657,20 +680,19 @@ exports.payWithPaypal = (req, res, capture) => {
       capture.status,
       paypalOrderId,
       captureId,
+      paymentCurrency, // Pass selected payment currency
       (err2) => {
         if (err2) {
           console.error('[PAYPAL HANDLER] ERROR at Step 5: createTransaction failed', {
             orderId,
             paypalOrderId,
             captureId,
+            paymentCurrency,
             error: err2.message,
             code: err2.code,
             stack: err2.stack
           });
-          return res.status(500).json({ 
-            error: 'Error creating transaction record',
-            details: err2.message
-          });
+          return res.redirect(`/payment-failed?reason=Transaction%20Creation%20Failed&errorMessage=${encodeURIComponent(err2.message)}&transactionId=${encodeURIComponent(paypalOrderId || 'N/A')}`);
         }
 
         console.log('[PAYPAL HANDLER] ✓ Step 5 complete: Transaction created');
@@ -679,9 +701,11 @@ exports.payWithPaypal = (req, res, capture) => {
         console.log('[PAYPAL HANDLER] ║ Order ID: ' + orderId + ' | Transaction linked ║');
         console.log('[PAYPAL HANDLER] ║ Capture ID: ' + (captureId !== 'N/A' ? captureId.substring(0, 15) + '...' : 'NOT CAPTURED') + ' ║');
         console.log('[PAYPAL HANDLER] ╚════════════════════════════════════════╝');
-        console.log('[PAYPAL HANDLER] Response sent to client:', { success: true, orderId });
-
-        return res.json({ success: true, status: 'COMPLETED', orderId });
+        
+        // Redirect to success page with order details (including payment currency)
+        const successUrl = `/payment-success?orderId=${orderId}&transactionId=${encodeURIComponent(paypalOrderId)}&amount=${encodeURIComponent(paidAmount)}&paymentMethod=paypal&paymentCurrency=${encodeURIComponent(paymentCurrency)}`;
+        console.log('[PAYPAL HANDLER] Redirecting to:', successUrl);
+        return res.redirect(successUrl);
       }
     );
   });
