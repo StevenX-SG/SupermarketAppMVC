@@ -2,3 +2,9 @@ node_modules/
 .env
 .vscode/
 *.log
+
+# Documentation files (local reference only)
+CURRENCY_COMPLETE_VERIFICATION.md
+PAYMENT_ENTITY_TABLES_ANALYSIS.md
+WALLET_PAYMENT_OPTION_DOCUMENTATION.md
+SQL_UPDATE_ORDERS_TABLE.sql

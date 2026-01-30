@@ -19,7 +19,7 @@ exports.getAllUsers = (req, res) => {
 
 // Show Add User Form
 exports.showAddForm = (req, res) => {
-  res.render('addUser');
+  res.render('addUser', { user: req.session.user });
 };
 
 // Add User (Create) → back to admin dashboard
@@ -43,7 +43,7 @@ exports.showEditForm = (req, res) => {
       return res.status(500).send('Error retrieving user');
     }
     if (results && results.length > 0) {
-      res.render('editUser', { user: results[0] });
+      res.render('editUser', { user: results[0], currentUser: req.session.user });
     } else {
       res.status(404).send('User not found');
     }

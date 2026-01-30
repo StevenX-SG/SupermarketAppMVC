@@ -4,14 +4,23 @@
   <meta charset="UTF-8">
   <title>FairPrime Market - Checkout</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <!-- PayPal JS SDK: Load with SGD as default currency -->
-  <script src="https://www.paypal.com/sdk/js?client-id=<%= process.env.PAYPAL_CLIENT_ID %>&currency=SGD" async defer></script>
+  <!-- PayPal JS SDK: Will be loaded dynamically with correct currency -->
+  <!-- Initial SDK load will be done in script section -->
 </head>
 <body>
   <%- include('partials/header') %>
 
   <div class="container mt-4">
-    <h2 class="mb-4">Checkout</h2>
+    <div class="row align-items-center mb-4">
+      <div class="col-md-6">
+        <h2>Checkout</h2>
+      </div>
+      <div class="col-md-6 text-end">
+        <a href="/account/wallet" class="btn btn-info btn-sm">
+          <i class="fas fa-wallet"></i> Manage Wallet & Rewards
+        </a>
+      </div>
+    </div>
 
     <form id="checkout-form" action="/checkout" method="POST">
       <div class="row">
@@ -39,29 +48,37 @@
 
           <div class="border rounded p-3 mb-3">
             <h5 class="mb-2">Payment Method</h5>
+            <!-- Wallet Payment Option (if user has balance) -->
+            <% 
+              const hasWalletBalance = user && user.walletBalance && parseFloat(user.walletBalance) > 0;
+              console.log('[Checkout View] User wallet balance:', user?.walletBalance, 'Has balance:', hasWalletBalance);
+            %>
+            <% if (hasWalletBalance) { %>
+              <div class="form-check" id="wallet-payment-option">
+                <input class="form-check-input" type="radio" name="paymentMethod"
+                       id="pm-wallet" value="Wallet">
+                <label class="form-check-label" for="pm-wallet">
+                  Pay with Wallet Balance (Available: $<%= parseFloat(user.walletBalance).toFixed(2) %>)
+                </label>
+              </div>
+              <div id="wallet-warning" style="display:none;" class="alert alert-warning alert-sm mt-2" style="font-size: 0.9rem;">
+                <small id="wallet-balance-warning"></small>
+              </div>
+            <% } %>
+            
             <div class="form-check">
               <input class="form-check-input" type="radio" name="paymentMethod"
-                     id="pm-card" value="card" checked>
-              <label class="form-check-label" for="pm-card">Credit / Debit Card</label>
+                     id="pm-cod" value="COD" checked>
+              <label class="form-check-label" for="pm-cod">Cash on Delivery (COD)</label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="radio" name="paymentMethod"
-                     id="pm-wallet" value="wallet">
-              <label class="form-check-label" for="pm-wallet">Digital Wallet (GrabPay / PayNow)</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="paymentMethod"
-                     id="pm-cod" value="cod">
-              <label class="form-check-label" for="pm-cod">Cash on Delivery</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="paymentMethod"
-                     id="pm-paypal" value="paypal">
+                     id="pm-paypal" value="PayPal">
               <label class="form-check-label" for="pm-paypal">PayPal</label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="radio" name="paymentMethod"
-                     id="pm-nets" value="nets">
+                     id="pm-nets" value="NETS">
               <label class="form-check-label" for="pm-nets">NETS QR</label>
             </div>
           </div>
@@ -122,6 +139,33 @@
                 <small>Convert your points to coins to get discounts. Visit your profile to convert points.</small>
               </div>
             <% } %>
+
+            <!-- Voucher Code Section -->
+            <% if (user && user.voucherBalance && user.voucherBalance > 0) { %>
+              <div class="border rounded p-3 mb-3" style="background-color: #f8f5ff;">
+                <h6 class="mb-2">
+                  <i class="fas fa-ticket-alt" style="color: #6f42c1;"></i> Apply Voucher Code
+                </h6>
+                <p class="small text-muted mb-2">You have <strong><%= user.voucherBalance %> available vouchers</strong></p>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="text" id="voucher-code-input" name="voucherCode" placeholder="Enter voucher code" class="form-control">
+                  <button type="button" id="apply-voucher-btn" class="btn btn-outline-primary">Apply</button>
+                </div>
+                <div id="voucher-discount-display" style="display:none;">
+                  <p class="small mb-0">
+                    Discount: <span id="voucher-discount-value">$0.00</span>
+                    <button type="button" id="remove-voucher-btn" class="btn btn-sm btn-outline-danger ms-2">Remove</button>
+                  </p>
+                </div>
+                <div id="voucher-error" class="alert alert-danger alert-sm" style="display:none; font-size: 0.85rem; padding: 0.5rem;"></div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="use-voucher-checkbox" name="use-voucher" disabled>
+                  <label class="form-check-label" for="use-voucher-checkbox">
+                    Apply selected voucher
+                  </label>
+                </div>
+              </div>
+            <% } %>
             
             <h5 class="d-flex justify-content-between">
               <span>Total (SGD)</span>
@@ -175,6 +219,9 @@
               <input type="hidden" id="selected-payment-currency" name="payment-currency" value="SGD">
               <input type="hidden" id="selected-payment-amount" name="payment-amount" value="">
               <input type="hidden" id="selected-fx-id" name="fx-id" value="">
+              <!-- Hidden inputs for voucher tracking -->
+              <input type="hidden" id="selected-voucher-id" name="voucherId" value="">
+              <input type="hidden" id="voucher-discount-amount" name="voucherDiscount" value="0">
             </div>
 
             <!-- Normal Place Order button (non-PayPal/HitPay methods) -->
@@ -214,14 +261,17 @@
 
   <script>
     // ===== PAYPAL SDK DYNAMIC RELOADING =====
-    function reloadPayPalSDK(currency = 'SGD') {
+    let paypalSDKLoaded = false;
+    
+    function loadPayPalSDK(currency = 'SGD') {
       return new Promise((resolve, reject) => {
-        // Remove existing PayPal script
+        // Remove existing PayPal script if it exists
         const existingScripts = document.querySelectorAll('script[src*="paypal.com/sdk"]');
         existingScripts.forEach(script => script.remove());
         
         // Remove PayPal global object to reset
         delete window.paypal;
+        paypalSDKLoaded = false;
 
         // Create and load new script with currency
         const script = document.createElement('script');
@@ -230,15 +280,21 @@
         
         script.onload = () => {
           console.log(`[PayPal SDK] Loaded with currency: ${currency}`);
+          paypalSDKLoaded = true;
           resolve();
         };
         script.onerror = () => {
           console.error(`[PayPal SDK] Failed to load with currency: ${currency}`);
+          paypalSDKLoaded = false;
           reject(new Error(`Failed to load PayPal SDK with currency ${currency}`));
         };
         
         document.head.appendChild(script);
       });
+    }
+    
+    function reloadPayPalSDK(currency = 'SGD') {
+      return loadPayPalSDK(currency);
     }
 
     const methodRadios = document.querySelectorAll('input[name="paymentMethod"]');
@@ -269,6 +325,17 @@
     const selectedPaymentCurrency = document.getElementById('selected-payment-currency');
     const selectedPaymentAmount = document.getElementById('selected-payment-amount');
     const selectedFxId = document.getElementById('selected-fx-id');
+
+    // Voucher Elements
+    const voucherCodeInput = document.getElementById('voucher-code-input');
+    const applyVoucherBtn = document.getElementById('apply-voucher-btn');
+    const voucherDiscountDisplay = document.getElementById('voucher-discount-display');
+    const voucherDiscountValue = document.getElementById('voucher-discount-value');
+    const removeVoucherBtn = document.getElementById('remove-voucher-btn');
+    const voucherError = document.getElementById('voucher-error');
+    const useVoucherCheckbox = document.getElementById('use-voucher-checkbox');
+    const selectedVoucherId = document.getElementById('selected-voucher-id');
+    const voucherDiscountAmount = document.getElementById('voucher-discount-amount');
     
     // Initialize payment amount with default total value
     if (selectedPaymentAmount) {
@@ -319,23 +386,144 @@
       useCoinsCheckbox.addEventListener('change', updateCoinDiscount);
     }
 
+    // ===== VOUCHER HANDLING =====
+    function updateTotalWithDiscounts() {
+      const baseTotal = parseFloat(totalValue);
+      const coinsUsed = parseInt(coinsInput?.value || 0);
+      const coinDiscount = (coinsUsed > 0 && useCoinsCheckbox?.checked) ? coinsUsed / 100 : 0;
+      const voucherDiscount = parseFloat(voucherDiscountAmount?.value || 0);
+      
+      const newTotal = Math.max(0, baseTotal - coinDiscount - voucherDiscount);
+      totalEl.textContent = '$' + newTotal.toFixed(2);
+      
+      // Update payment amount for PayPal/NETS
+      if (selectedPaymentAmount) {
+        selectedPaymentAmount.value = newTotal.toFixed(2);
+      }
+      if (netsAmount) {
+        netsAmount.value = newTotal.toFixed(2);
+      }
+    }
+
+    if (voucherCodeInput && applyVoucherBtn) {
+      applyVoucherBtn.addEventListener('click', async function() {
+        const voucherCode = voucherCodeInput.value.trim();
+        
+        if (!voucherCode) {
+          voucherError.style.display = 'block';
+          voucherError.textContent = 'Please enter a voucher code';
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/voucher/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ voucherCode })
+          });
+
+          const data = await response.json();
+
+          if (!data.success) {
+            voucherError.style.display = 'block';
+            voucherError.textContent = data.error || 'Invalid voucher code';
+            voucherDiscountDisplay.style.display = 'none';
+            return;
+          }
+
+          // Voucher is valid
+          voucherError.style.display = 'none';
+          selectedVoucherId.value = data.voucher.id;
+
+          // Calculate discount
+          let discount = 0;
+          if (data.voucher.discountAmount > 0) {
+            discount = data.voucher.discountAmount;
+          } else if (data.voucher.discountPercentage > 0) {
+            const baseTotal = parseFloat(totalValue);
+            discount = (baseTotal * data.voucher.discountPercentage) / 100;
+          }
+
+          voucherDiscountAmount.value = discount.toFixed(2);
+          voucherDiscountValue.textContent = '$' + discount.toFixed(2);
+          voucherDiscountDisplay.style.display = 'block';
+          useVoucherCheckbox.disabled = false;
+          useVoucherCheckbox.checked = true;
+          
+          // Update total
+          updateTotalWithDiscounts();
+          voucherCodeInput.disabled = true;
+          applyVoucherBtn.disabled = true;
+        } catch (err) {
+          voucherError.style.display = 'block';
+          voucherError.textContent = 'Error validating voucher: ' + err.message;
+        }
+      });
+
+      removeVoucherBtn?.addEventListener('click', function() {
+        voucherCodeInput.value = '';
+        voucherCodeInput.disabled = false;
+        applyVoucherBtn.disabled = false;
+        selectedVoucherId.value = '';
+        voucherDiscountAmount.value = '0';
+        voucherDiscountDisplay.style.display = 'none';
+        voucherError.style.display = 'none';
+        useVoucherCheckbox.checked = false;
+        useVoucherCheckbox.disabled = true;
+        updateTotalWithDiscounts();
+      });
+
+      useVoucherCheckbox?.addEventListener('change', updateTotalWithDiscounts);
+    }
+
     function updatePaymentUI() {
       const selected = document.querySelector('input[name="paymentMethod"]:checked').value;
       
       // Hide all payment containers first
-      placeOrderBtn.style.display = 'none';
       paypalContainer.style.display = 'none';
       netsContainer.style.display = 'none';
       paypalExchangeContainer.style.display = 'none';
+      const warningDiv = document.getElementById('wallet-warning');
+      if (warningDiv) warningDiv.style.display = 'none';
       
-      // Show the appropriate payment method
-      if (selected === 'paypal') {
+      // Show the appropriate payment method and Place Order button
+      if (selected === 'PayPal') {
         paypalContainer.style.display = 'block';
         paypalExchangeContainer.style.display = 'block';
-      } else if (selected === 'nets') {
+        placeOrderBtn.style.display = 'none'; // PayPal handles its own button
+        
+        // Ensure PayPal SDK is loaded with correct currency when PayPal is selected
+        const currentCurrency = selectedPaymentCurrency.value || 'SGD';
+        if (!paypalSDKLoaded || typeof paypal === 'undefined') {
+          console.log('[Checkout] PayPal selected - ensuring SDK is loaded with currency:', currentCurrency);
+          reloadPayPalSDK(currentCurrency).then(() => {
+            renderPayPalButton();
+          }).catch(err => {
+            console.error('[Checkout] Error loading PayPal SDK:', err);
+          });
+        } else {
+          renderPayPalButton();
+        }
+      } else if (selected === 'NETS') {
         netsContainer.style.display = 'block';
         netsAmount.value = totalValue;
+        placeOrderBtn.style.display = 'none'; // NETS form has its own button
+      } else if (selected === 'Wallet') {
+        // Handle wallet payment - check balance
+        const walletBalance = <%= user && user.walletBalance ? user.walletBalance : 0 %>;
+        const totalAmount = parseFloat(totalEl.dataset.total || totalEl.textContent.replace('$', ''));
+        const warningText = document.getElementById('wallet-balance-warning');
+        
+        if (walletBalance < totalAmount) {
+          warningDiv.style.display = 'block';
+          warningText.textContent = `Insufficient balance! You have $${walletBalance.toFixed(2)} but need $${totalAmount.toFixed(2)}`;
+          placeOrderBtn.style.display = 'none';
+        } else {
+          warningDiv.style.display = 'none';
+          placeOrderBtn.style.display = 'block';
+        }
       } else {
+        // COD or other methods - show Place Order button
         placeOrderBtn.style.display = 'block';
       }
     }
@@ -359,7 +547,7 @@
         currencyError.style.display = 'none';
         
         // Reload PayPal SDK with SGD if PayPal is selected
-        if (document.querySelector('input[name="paymentMethod"]:checked').value === 'paypal') {
+        if (document.querySelector('input[name="paymentMethod"]:checked').value === 'PayPal') {
           console.log('[Checkout] Reloading PayPal SDK with SGD');
           try {
             await reloadPayPalSDK('SGD');
@@ -401,15 +589,16 @@
         }
 
         // Store selected currency and amount
-        // IMPORTANT: Always send original SGD amount to PayPal for accuracy
-        // PayPal will use its own conversion rate, not our pre-converted amount
         selectedPaymentCurrency.value = targetCurrency;
         
         // Apply coin discount if coins are being used
         const coinsUsed = parseInt(coinsInput?.value || 0);
         const coinDiscount = (coinsUsed > 0 && useCoinsCheckbox?.checked) ? coinsUsed / 100 : 0;
         const finalAmount = Math.max(0, parseFloat(totalValue) - coinDiscount);
-        selectedPaymentAmount.value = finalAmount.toFixed(2);  // Keep as SGD for PayPal
+        
+        // Use converted amount for PayPal (in the selected currency) - ensure it's a number
+        const convertedPaymentAmount = parseFloat(data.convertedAmount) || finalAmount;
+        selectedPaymentAmount.value = convertedPaymentAmount.toFixed(2);
         
         selectedFxId.value = data.fxId;
 
@@ -424,10 +613,11 @@
         currencyConversionDisplay.style.display = 'block';
 
         // Reload PayPal SDK with new currency if PayPal is selected
-        if (document.querySelector('input[name="paymentMethod"]:checked').value === 'paypal') {
+        if (document.querySelector('input[name="paymentMethod"]:checked').value === 'PayPal') {
           console.log(`[Checkout] Reloading PayPal SDK with ${targetCurrency}`);
           try {
             await reloadPayPalSDK(targetCurrency);
+            console.log('[Checkout] SDK reloaded, rendering PayPal button with new currency');
             renderPayPalButton();
           } catch (err) {
             console.error('[Checkout] Error reloading SDK:', err);
@@ -474,7 +664,7 @@
     methodRadios.forEach(r => r.addEventListener('change', updatePaymentUI));
     updatePaymentUI();
 
-    // Handle form submission - ensure coins are only sent if checkbox is checked
+    // Handle form submission - ensure coins/vouchers are only sent if enabled
     document.getElementById('checkout-form').addEventListener('submit', function(e) {
       if (!coinsInput) return; // Skip if coins elements don't exist
       
@@ -482,13 +672,19 @@
         coinsInput.value = 0; // Clear coins if checkbox is unchecked
       }
       
-      // Update payment amount for PayPal/NETS with coin discount
+      if (!useVoucherCheckbox?.checked || !selectedVoucherId.value) {
+        selectedVoucherId.value = ''; // Clear voucher if checkbox is unchecked
+        voucherDiscountAmount.value = '0';
+      }
+      
+      // Update payment amounts with all discounts
       const coinsUsed = parseInt(coinsInput.value) || 0;
       const coinDiscount = coinsUsed > 0 ? coinsUsed / 100 : 0;
+      const voucherDiscount = parseFloat(voucherDiscountAmount.value) || 0;
       const baseTotal = parseFloat(totalValue);
-      const finalTotal = Math.max(0, baseTotal - coinDiscount);
+      const finalTotal = Math.max(0, baseTotal - coinDiscount - voucherDiscount);
       
-      // Update hidden input if it exists
+      // Update hidden inputs if they exist
       if (selectedPaymentAmount) {
         selectedPaymentAmount.value = finalTotal.toFixed(2);
       }
@@ -502,14 +698,15 @@
     // Render PayPal button function
     function renderPayPalButton() {
       // Wait for PayPal to be available
-      if (typeof paypal === 'undefined') {
-        console.warn('[Checkout] PayPal SDK not yet loaded, retrying...');
+      if (typeof paypal === 'undefined' || !paypalSDKLoaded) {
+        console.warn('[Checkout] PayPal SDK not yet loaded, retrying in 100ms...');
         setTimeout(renderPayPalButton, 100);
         return;
       }
 
       // Clear existing button container
       const container = document.getElementById('paypal-button-container');
+      if (!container) return; // Container might not be in DOM yet
       container.innerHTML = '';
 
       // Render PayPal button
@@ -533,7 +730,8 @@
               },
               body: JSON.stringify({
                 amount: paymentAmount,
-                currency: paymentCurrency
+                currency: paymentCurrency,
+                fxId: selectedFxId.value || null
               })
             }).then(res => {
               console.log('[CLIENT] Fetch response status:', res.status);
@@ -598,17 +796,24 @@
       }
     }
 
-    // Render button when page loads (after PayPal SDK is available)
+    // Initialize PayPal SDK on page load
+    async function initializePayPalSDK() {
+      try {
+        console.log('[Checkout] Initializing PayPal SDK with default currency (SGD)...');
+        await loadPayPalSDK('SGD');
+        console.log('[Checkout] PayPal SDK initialized successfully');
+        renderPayPalButton();
+      } catch (err) {
+        console.error('[Checkout] Error initializing PayPal SDK:', err);
+      }
+    }
+
+    // Render button when page loads
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        console.log('[Checkout] Page loaded, waiting for PayPal SDK...');
-        // Give PayPal SDK a moment to load
-        setTimeout(renderPayPalButton, 500);
-      });
+      document.addEventListener('DOMContentLoaded', initializePayPalSDK);
     } else {
       // Page already loaded
-      console.log('[Checkout] Page already loaded, waiting for PayPal SDK...');
-      setTimeout(renderPayPalButton, 500);
+      initializePayPalSDK();
     }
   </script>
 </body>

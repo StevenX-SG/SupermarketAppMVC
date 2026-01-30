@@ -18,14 +18,35 @@ async function getAccessToken() {
   return data.access_token;
 }
 
-async function createOrder(amount, currencyCode = 'SGD') {
+async function createOrder(amount, currencyCode = 'SGD', fxId = null) {
   const accessToken = await getAccessToken();
   
   console.log('[PayPal.createOrder] Creating order with:', {
     amount,
-    currencyCode
+    currencyCode,
+    fxId
   });
   
+  const purchaseUnit = {
+    amount: {
+      currency_code: currencyCode,
+      value: amount
+    }
+  };
+
+  // Add fxId if provided (for rate locking on currency conversions)
+  if (fxId) {
+    purchaseUnit.payment_instruction = {
+      platform_fees: [],
+      disbursement_mode: 'INSTANT',
+      payee_pricing_tier_id: null,
+      payee_receivable_fx_conversion_data: {
+        id: fxId
+      }
+    };
+    console.log('[PayPal.createOrder] Using fxId for rate locking:', fxId);
+  }
+
   const response = await fetch(`${PAYPAL_API}/v2/checkout/orders`, {
     method: 'POST',
     headers: {
@@ -34,12 +55,7 @@ async function createOrder(amount, currencyCode = 'SGD') {
     },
     body: JSON.stringify({
       intent: 'CAPTURE',
-      purchase_units: [{
-        amount: {
-          currency_code: currencyCode,
-          value: amount
-        }
-      }]
+      purchase_units: [purchaseUnit]
     })
   });
   
@@ -47,7 +63,8 @@ async function createOrder(amount, currencyCode = 'SGD') {
   console.log('[PayPal.createOrder] Order created:', {
     orderId: data.id,
     currency: currencyCode,
-    amount
+    amount,
+    fxId: fxId ? 'locked' : 'not locked'
   });
   
   return data;
@@ -154,6 +171,7 @@ async function refundCapture(captureId, amount, currencyCode = 'SGD') {
     console.log('[PayPal.refundCapture] Input parameters:', { 
       captureId, 
       amount,
+      amountType: typeof amount,
       currency: currencyCode
     });
     
@@ -161,6 +179,19 @@ async function refundCapture(captureId, amount, currencyCode = 'SGD') {
     console.log('[PayPal.refundCapture] ✓ Access token obtained');
     
     console.log('[PayPal.refundCapture] Calling PayPal refund endpoint...');
+    
+    // Ensure amount is properly formatted based on currency
+    // Most currencies use 2 decimal places, but JPY uses 0
+    const decimalPlaces = currencyCode === 'JPY' ? 0 : 2;
+    const formattedAmount = parseFloat(amount).toFixed(decimalPlaces);
+    
+    console.log('[PayPal.refundCapture] Formatted amount:', {
+      original: amount,
+      formatted: formattedAmount,
+      currency: currencyCode,
+      decimalPlaces: decimalPlaces
+    });
+    
     const response = await fetch(`${PAYPAL_API}/v2/payments/captures/${captureId}/refund`, {
       method: 'POST',
       headers: {
@@ -170,7 +201,7 @@ async function refundCapture(captureId, amount, currencyCode = 'SGD') {
       body: JSON.stringify({
         amount: {
           currency_code: currencyCode,
-          value: amount.toString()
+          value: formattedAmount
         }
       })
     });

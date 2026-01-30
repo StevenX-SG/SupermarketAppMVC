@@ -19,6 +19,25 @@ const wishlistController = require('./Controller/WishlistController');
 const paypal = require('./services/paypal');
 const { createExchangeClient } = require('./services/paypal-currency-exchange');
 
+// ==================================================
+// SUPPORTED CURRENCIES
+// ==================================================
+// List of currencies supported by PayPal and available in checkout
+const SUPPORTED_CURRENCIES = ['SGD', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD'];
+
+function validateCurrency(currencyCode) {
+  if (!currencyCode || typeof currencyCode !== 'string') {
+    return { valid: false, error: 'Currency code is required and must be a string' };
+  }
+  
+  const code = currencyCode.toUpperCase().trim();
+  if (!SUPPORTED_CURRENCIES.includes(code)) {
+    return { valid: false, error: `Currency ${code} is not supported. Supported currencies: ${SUPPORTED_CURRENCIES.join(', ')}` };
+  }
+  
+  return { valid: true, code };
+}
+
 // MIDDLEWARE
 const {
   checkAuthenticated,
@@ -100,6 +119,7 @@ app.get('/', (req, res) => {
 // ---------- AUTH ----------
 app.get('/register', (req, res) => {
   res.render('register', {
+    user: req.session.user || null,
     messages: req.flash('error'),
     formData: req.flash('formData')[0]
   });
@@ -117,6 +137,7 @@ app.post('/register', validateRegistration, (req, res) => {
 
 app.get('/login', (req, res) => {
   res.render('login', {
+    user: req.session.user || null,
     messages: req.flash('success'),
     errors: req.flash('error')
   });
@@ -167,6 +188,53 @@ app.post('/profile', (req, res) => {
 // ---------- LOYALTY POINTS & COINS ----------
 // Convert loyalty points to coins
 app.post('/api/loyalty/convert-points', checkAuthenticated, userController.convertPointsToCoin);
+
+// ---------- MY WALLET ----------
+app.get('/account/wallet', checkAuthenticated, profileController.showWallet);
+app.post('/account/wallet/topup', checkAuthenticated, profileController.topUpWallet);
+app.post('/account/wallet/convert-points', checkAuthenticated, profileController.convertPointsToCoin);
+app.post('/account/wallet/use-coins', checkAuthenticated, profileController.useCoins);
+app.post('/account/wallet/redeem-voucher', checkAuthenticated, profileController.redeemVoucher);
+app.get('/api/wallet', checkAuthenticated, profileController.getWalletAPI);
+
+// ---------- VOUCHER API ----------
+app.post('/api/voucher/validate', checkAuthenticated, (req, res) => {
+  const { voucherCode } = req.body;
+  const userId = req.session.user?.id;
+
+  if (!voucherCode || !userId) {
+    return res.json({ success: false, error: 'Invalid request' });
+  }
+
+  const Voucher = require('./Model/Voucher');
+  Voucher.getVoucherByCode(voucherCode, userId, (err, results) => {
+    if (err) {
+      console.error('[Voucher API] Error fetching voucher:', err);
+      return res.json({ success: false, error: 'Database error' });
+    }
+
+    if (!results || results.length === 0) {
+      return res.json({ success: false, error: 'Voucher code not found' });
+    }
+
+    const voucher = results[0];
+
+    // Check if voucher is already used
+    if (voucher.isUsed) {
+      return res.json({ success: false, error: 'Voucher has already been used' });
+    }
+
+    // Check if voucher is expired
+    const expiryDate = new Date(voucher.expiryDate);
+    const today = new Date();
+    if (expiryDate < today) {
+      return res.json({ success: false, error: 'Voucher has expired' });
+    }
+
+    // Voucher is valid
+    res.json({ success: true, voucher });
+  });
+});
 
 // ---------- USERS (ADMIN) ----------
 app.get('/users', checkAuthenticated, checkAdmin, userController.getAllUsers);
@@ -253,6 +321,7 @@ app.get('/payment-success', checkAuthenticated, (req, res) => {
       const itemCount = results && results[0] ? results[0].totalQuantity || 0 : 0;
       
       res.render('paymentSuccess', {
+        user: req.session.user || null,
         orderId: orderId || null,
         transactionId: transactionId || null,
         amount: amount || null,
@@ -265,6 +334,7 @@ app.get('/payment-success', checkAuthenticated, (req, res) => {
     });
   } else {
     res.render('paymentSuccess', {
+      user: req.session.user || null,
       orderId: orderId || null,
       transactionId: transactionId || null,
       amount: amount || null,
@@ -287,6 +357,7 @@ app.get('/payment-failed', checkAuthenticated, (req, res) => {
   });
 
   res.render('paymentFailed', {
+    user: req.session.user || null,
     reason: reason || 'Payment could not be processed',
     errorMessage: errorMessage || 'Please check your payment details and try again',
     transactionId: transactionId || null
@@ -383,7 +454,9 @@ app.get('/admin', checkAuthenticated, checkAdmin, (req, res) => {
           users,
           products,
           orders,
-          tab: req.query.tab || 'products'
+          tab: req.query.tab || 'products',
+          refundSuccess: req.query.refundSuccess === 'true' ? true : false,
+          orderId: req.query.orderId || null
         });
       });
     });
@@ -439,17 +512,27 @@ app.get('/invoice/:orderId', checkAuthenticated, checkAdmin, (req, res) => {
 // ---------- PAYPAL API ----------
 app.post('/api/paypal/create-order', async (req, res) => {
   try {
-    const { amount, currency } = req.body;
-    const paymentCurrency = currency || 'SGD';
+    const { amount, currency, fxId } = req.body;
     
-    console.log('[PAYPAL API] Creating order:', { amount, currency: paymentCurrency, amountType: typeof amount });
+    console.log('[PAYPAL API] Creating order:', { amount, currency: currency || 'SGD', fxId, amountType: typeof amount });
     
     if (!amount) {
       console.error('[PAYPAL API] ✗ No amount provided');
       return res.status(400).json({ error: 'Amount is required' });
     }
     
-    const order = await paypal.createOrder(String(amount), paymentCurrency);
+    // Validate currency
+    const currencyValidation = validateCurrency(currency || 'SGD');
+    if (!currencyValidation.valid) {
+      console.error('[PAYPAL API] ✗ Invalid currency:', currencyValidation.error);
+      return res.status(400).json({ error: currencyValidation.error });
+    }
+    
+    const paymentCurrency = currencyValidation.code;
+    console.log('[PAYPAL API] ✓ Currency validated:', paymentCurrency);
+    
+    // Create order with fxId if provided (for rate locking)
+    const order = await paypal.createOrder(String(amount), paymentCurrency, fxId || null);
     console.log('[PAYPAL API] PayPal response:', order);
     
     if (order && order.id) {
@@ -614,13 +697,31 @@ app.post('/api/paypal/exchange-rate', async (req, res) => {
       });
     }
 
-    console.log('[ROUTE] Fetching exchange rate:', { baseCurrency, targetCurrency, amount });
+    // Validate both currencies
+    const baseCurrencyValidation = validateCurrency(baseCurrency);
+    const targetCurrencyValidation = validateCurrency(targetCurrency);
+    
+    if (!baseCurrencyValidation.valid) {
+      console.error('[ROUTE] Invalid base currency:', baseCurrencyValidation.error);
+      return res.status(400).json({ error: baseCurrencyValidation.error });
+    }
+    
+    if (!targetCurrencyValidation.valid) {
+      console.error('[ROUTE] Invalid target currency:', targetCurrencyValidation.error);
+      return res.status(400).json({ error: targetCurrencyValidation.error });
+    }
+
+    console.log('[ROUTE] Fetching exchange rate:', { 
+      baseCurrency: baseCurrencyValidation.code, 
+      targetCurrency: targetCurrencyValidation.code, 
+      amount 
+    });
 
     // Create exchange client with fresh access token
     const exchangeClient = await createExchangeClient();
     
     // Get exchange rate
-    const result = await exchangeClient.getExchangeRate(baseCurrency, targetCurrency, amount.toString());
+    const result = await exchangeClient.getExchangeRate(baseCurrencyValidation.code, targetCurrencyValidation.code, amount.toString());
 
     if (!result.success) {
       console.error('[ROUTE] ✗ Failed to get exchange rate:', result.error);

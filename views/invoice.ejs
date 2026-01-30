@@ -20,7 +20,16 @@
       <p><strong>Customer ID:</strong> <%= order.userId %></p>
       <p><strong>Order Date:</strong> <%= order.createdAt %></p>
       <% if (order && order.paymentMethod) { %>
-        <p><strong>Payment Method:</strong> <%= order.paymentMethod %></p>
+        <p><strong>Payment Method:</strong> 
+          <% 
+            let methodDisplay = order.paymentMethod;
+            if (order.paymentMethod === 'COD') methodDisplay = 'Cash on Delivery (COD)';
+            else if (order.paymentMethod === 'PayPal') methodDisplay = 'PayPal';
+            else if (order.paymentMethod === 'NETS') methodDisplay = 'NETS QR';
+            else if (order.paymentMethod === 'Wallet') methodDisplay = 'Wallet Balance';
+          %>
+          <%= methodDisplay %>
+        </p>
       <% } %>
       <% if (paymentCurrency && paymentCurrency !== 'SGD') { %>
         <p><strong>Payment Currency:</strong> <span style="color: #0066cc; font-weight: bold;"><%= paymentCurrency %></span></p>

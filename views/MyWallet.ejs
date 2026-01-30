@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Wallet & Rewards - FairPrime Market</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #f8f9fa;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .wallet-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px 0;
+      margin-bottom: 30px;
+      border-radius: 10px;
+    }
+    .wallet-card {
+      background: white;
+      border-radius: 10px;
+      padding: 25px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      border-left: 5px solid #667eea;
+    }
+    .wallet-card.coins {
+      border-left-color: #ffc107;
+    }
+    .wallet-card.paylater {
+      border-left-color: #17a2b8;
+    }
+    .balance-display {
+      font-size: 2.5rem;
+      font-weight: bold;
+      color: #667eea;
+      margin: 15px 0;
+    }
+    .balance-display.coins {
+      color: #ffc107;
+    }
+    .balance-display.paylater {
+      color: #17a2b8;
+    }
+    .btn-wallet {
+      background-color: #667eea;
+      border-color: #667eea;
+      color: white;
+      margin: 10px 5px 10px 0;
+      font-weight: 500;
+      padding: 10px 25px;
+      border-radius: 5px;
+      transition: all 0.3s;
+    }
+    .btn-wallet:hover {
+      background-color: #764ba2;
+      border-color: #764ba2;
+      color: white;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .voucher-item {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .voucher-badge {
+      background-color: #28a745;
+      color: white;
+      padding: 5px 15px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .voucher-badge.expired {
+      background-color: #dc3545;
+    }
+    .alert-custom {
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+    .stat-card {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .stat-value {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: #667eea;
+      margin: 10px 0;
+    }
+    .stat-label {
+      font-size: 0.9rem;
+      color: #6c757d;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .paylater-info {
+      background: #e7f3ff;
+      border-left: 4px solid #17a2b8;
+      padding: 15px;
+      border-radius: 5px;
+      margin-top: 15px;
+    }
+    .form-section {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .form-section h5 {
+      color: #667eea;
+      margin-bottom: 15px;
+      font-weight: 600;
+    }
+    .section-title {
+      color: #333;
+      font-weight: 600;
+      margin: 30px 0 20px 0;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #667eea;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #6c757d;
+    }
+    .empty-state-icon {
+      font-size: 3rem;
+      margin-bottom: 15px;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <%- include('partials/header') %>
+
+  <div class="container mt-4 mb-5">
+    <!-- HEADER -->
+    <div class="wallet-header">
+      <h1 class="mb-0">💰 My Wallet & Rewards</h1>
+      <p class="mb-0 mt-2">Manage your balance, coins, vouchers, and payment options</p>
+    </div>
+
+    <!-- MESSAGES -->
+    <% if (messages && messages.length > 0) { %>
+      <% messages.forEach(msg => { %>
+        <div class="alert alert-success alert-custom alert-dismissible fade show" role="alert">
+          ✅ <%= msg %>
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      <% }); %>
+    <% } %>
+
+    <% if (errors && errors.length > 0) { %>
+      <% errors.forEach(err => { %>
+        <div class="alert alert-danger alert-custom alert-dismissible fade show" role="alert">
+          ❌ <%= err %>
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      <% }); %>
+    <% } %>
+
+    <!-- STATS OVERVIEW -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Wallet Balance</div>
+        <div class="stat-value">$<%= (parseFloat(wallet.walletBalance) || 0).toFixed(2) %></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Coins</div>
+        <div class="stat-value"><%= (parseInt(wallet.coinBalance) || 0) %></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Loyalty Points</div>
+        <div class="stat-value"><%= (wallet.loyaltyPoints || 0) %></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active Vouchers</div>
+        <div class="stat-value"><%= (vouchers ? vouchers.length : 0) %></div>
+      </div>
+    </div>
+
+    <!-- WALLET SECTION -->
+    <div class="wallet-card">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4>💳 Digital Wallet</h4>
+        <span class="badge bg-primary">Stored Value</span>
+      </div>
+      <hr>
+      <div class="balance-display <%= (wallet.walletBalance || 0) === 0 ? 'text-danger' : '' %>">
+        $<%= (parseFloat(wallet.walletBalance) || 0).toFixed(2) %>
+      </div>
+      <p class="text-muted">Your current wallet balance. Use this to pay for purchases.</p>
+
+      <form method="POST" action="/account/wallet/topup" style="display: inline;">
+        <div class="mt-2">
+          <select name="topUpAmount" class="form-select w-auto d-inline-block me-2" style="width: auto;">
+            <option value="10">$10</option>
+            <option value="25">$25</option>
+            <option value="50">$50</option>
+          </select>
+          <button type="submit" class="btn btn-wallet">➕ Top Up</button>
+        </div>
+      </form>
+      <div class="alert alert-info mt-3">
+        <strong>💡 How it works:</strong> Top up your wallet to make quick purchases. You'll earn loyalty points on every purchase!
+      </div>
+    </div>
+    <!-- COINS SECTION -->
+    <div class="wallet-card coins">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4>🪙 Reward Coins</h4>
+        <span class="badge bg-warning">Earned Rewards</span>
+      </div>
+      <hr>
+      <div class="balance-display coins"><%= (parseInt(wallet.coinBalance) || 0) %> Coins</div>
+      <p class="text-muted">1 Coin = ~$1 discount. Convert your loyalty points to coins for instant discounts!</p>
+      
+      <% if (wallet.loyaltyPoints && wallet.loyaltyPoints > 0) { %>
+        <div class="alert alert-info">
+          <strong>📊 Conversion Rate:</strong> 10 Loyalty Points = 1 Coin
+        </div>
+        <form method="POST" action="/account/wallet/convert-points">
+          <div class="row">
+            <div class="col-md-8">
+              <input 
+                type="number" 
+                name="pointsToConvert" 
+                class="form-control" 
+                placeholder="Enter points to convert (min 10)" 
+                min="10" 
+                step="10"
+                max="<%= wallet.loyaltyPoints %>"
+                required
+              >
+              <small class="text-muted d-block mt-2">You have <%= (parseInt(wallet.loyaltyPoints) || 0) %> loyalty points available</small>
+            </div>
+            <div class="col-md-4">
+              <button type="submit" class="btn btn-wallet w-100">Convert to Coins</button>
+            </div>
+          </div>
+        </form>
+      <% } else { %>
+        <div class="alert alert-warning">
+          📝 No loyalty points available yet. Make purchases to earn points!
+        </div>
+      <% } %>
+    </div>
+
+    <!-- VOUCHERS SECTION -->
+    <div class="wallet-card">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4>🎟️ My Vouchers</h4>
+        <span class="badge bg-success"><%= (vouchers ? vouchers.length : 0) %></span>
+      </div>
+      <hr>
+      
+      <% if (vouchers && vouchers.length > 0) { %>
+        <div class="mb-4">
+          <% vouchers.forEach(voucher => { %>
+            <div class="voucher-item">
+              <div>
+                <h6 class="mb-1"><strong><%= voucher.code %></strong></h6>
+                <p class="mb-1 text-muted" style="font-size: 0.9rem;">
+                  <% if (voucher.discountAmount > 0) { %>
+                    Save $<%= voucher.discountAmount.toFixed(2) %>
+                  <% } else { %>
+                    Save <%= voucher.discountPercentage %>%
+                  <% } %>
+                  • Expires: <%= new Date(voucher.expiryDate).toLocaleDateString() %>
+                </p>
+              </div>
+              <div>
+                <% if (new Date(voucher.expiryDate) >= new Date() && !voucher.isUsed) { %>
+                  <span class="voucher-badge">✓ Active</span>
+                <% } else if (voucher.isUsed) { %>
+                  <span class="voucher-badge expired">✗ Used</span>
+                <% } else { %>
+                  <span class="voucher-badge expired">✗ Expired</span>
+                <% } %>
+              </div>
+            </div>
+          <% }); %>
+        </div>
+
+        <div class="form-section">
+          <h5>🔐 Redeem Voucher Code</h5>
+          <form method="POST" action="/account/wallet/redeem-voucher">
+            <div class="row">
+              <div class="col-md-8">
+                <input 
+                  type="text" 
+                  name="voucherCode" 
+                  class="form-control" 
+                  placeholder="Enter voucher code" 
+                  required
+                >
+              </div>
+              <div class="col-md-4">
+                <button type="submit" class="btn btn-outline-primary w-100">Redeem</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      <% } else { %>
+        <div class="empty-state">
+          <div class="empty-state-icon">🎟️</div>
+          <p>No active vouchers at the moment</p>
+          <p class="text-muted small">Keep an eye on promotions to earn vouchers!</p>
+        </div>
+      <% } %>
+    </div>
+
+    <!-- PAY LATER SECTION -->
+    <div class="wallet-card paylater">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4>📅 Pay Later Option</h4>
+        <span class="badge bg-info">Credit Limit</span>
+      </div>
+      <hr>
+      <div class="row">
+        <div class="col-md-6 text-center">
+          <p class="text-muted mb-2">Credit Limit</p>
+          <div class="balance-display paylater" style="font-size: 2rem; margin: 10px 0;">
+            $<%= (parseFloat(wallet.payLaterLimit) || 0).toFixed(2) %>
+          </div>
+        </div>
+        <div class="col-md-6 text-center">
+          <p class="text-muted mb-2">Amount Used</p>
+          <div class="balance-display paylater" style="font-size: 2rem; margin: 10px 0;">
+            $<%= (parseFloat(wallet.payLaterBalance) || 0).toFixed(2) %>
+          </div>
+        </div>
+      </div>
+      <div class="progress mt-3" style="height: 25px;">
+        <% const payLaterLimit = parseFloat(wallet.payLaterLimit) || 0; const payLaterBalance = parseFloat(wallet.payLaterBalance) || 0; const payLaterPercentage = payLaterLimit > 0 ? Math.round((payLaterBalance / payLaterLimit) * 100) : 0; %>
+        <div 
+          class="progress-bar bg-warning" 
+          role="progressbar"
+          style="width: <%= payLaterPercentage %>%"
+          aria-valuenow="<%= payLaterBalance %>"
+          aria-valuemin="0"
+          aria-valuemax="<%= payLaterLimit %>"
+        >
+          <%= payLaterPercentage %>%
+        </div>
+      </div>
+      <div class="paylater-info mt-4">
+        <strong>ℹ️ Pay Later Information</strong>
+        <ul class="mb-0 mt-2">
+          <li>Your credit limit: <strong>$<%= (parseFloat(wallet.payLaterLimit) || 0).toFixed(2) %></strong></li>
+          <li>Currently used: <strong>$<%= (parseFloat(wallet.payLaterBalance) || 0).toFixed(2) %></strong></li>
+          <li>Available credit: <strong>$<%= ((parseFloat(wallet.payLaterLimit) || 0) - (parseFloat(wallet.payLaterBalance) || 0)).toFixed(2) %></strong></li>
+          <li>✓ Full payment due within 30 days of purchase</li>
+          <li>✓ No interest for on-time payments</li>
+          <li>✓ Late fees apply after 30 days</li>
+        </ul>
+      </div>
+      <% if (wallet.payLaterLimit === 0 || wallet.payLaterLimit === null) { %>
+        <div class="alert alert-info mt-3">
+          🔓 Pay Later feature is not yet enabled for your account. Contact customer service to request credit!
+        </div>
+      <% } %>
+    </div>
+
+    <!-- QUICK ACTIONS -->
+    <div style="margin-top: 40px; text-align: center; padding: 20px; background: white; border-radius: 10px;">
+      <h5 style="color: #667eea; margin-bottom: 15px;">Ready to Shop?</h5>
+      <a href="/shopping" class="btn btn-wallet btn-lg me-2">
+        🛒 Go Shopping
+      </a>
+      <a href="/checkout" class="btn btn-outline-secondary btn-lg">
+        🛍️ View Cart
+      </a>
+    </div>
+  </div>
+
+  <%- include('partials/footer') %>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+

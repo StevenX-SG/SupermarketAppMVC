@@ -66,14 +66,40 @@ exports.showCheckout = (req, res) => {
     return res.redirect('/cart');
   }
 
-  // Data for checkout.ejs
-  const cartItems = cart.getItemsArray();
-  const subtotal = cart.totalPrice;
+  // Refresh user data from database to ensure we have latest walletBalance, coinBalance, etc.
+  const User = require('../Model/User');
+  const userId = req.session.user?.id;
 
-  res.render('checkout', {
-    user: req.session.user,
-    cartItems,
-    subtotal
+  if (!userId) {
+    return res.redirect('/login');
+  }
+
+  User.getUserById(userId, (err, userResults) => {
+    if (err || !userResults || userResults.length === 0) {
+      console.error('[Checkout] Error fetching user:', err);
+      return res.redirect('/cart');
+    }
+
+    // Update session with fresh user data
+    const freshUserData = userResults[0];
+    req.session.user = freshUserData;
+
+    // Data for checkout.ejs
+    const cartItems = cart.getItemsArray();
+    const subtotal = cart.totalPrice;
+
+    console.log('[Checkout] User data:', {
+      id: freshUserData.id,
+      username: freshUserData.username,
+      walletBalance: freshUserData.walletBalance,
+      coinBalance: freshUserData.coinBalance
+    });
+
+    res.render('checkout', {
+      user: freshUserData,
+      cartItems,
+      subtotal
+    });
   });
 };
 

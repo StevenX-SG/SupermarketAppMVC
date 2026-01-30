@@ -1,6 +1,7 @@
 const Order = require('../Model/Order');
 const Cart = require('../Model/Cart');
 const Product = require('../Model/Product');
+const Voucher = require('../Model/Voucher');
 const db = require('../db');
 const paypalService = require('../services/paypal');
 
@@ -107,6 +108,15 @@ exports.approveRefund = (req, res) => {
       return res.status(400).send('Only orders with "Refund Requested" status can be approved');
     }
 
+    // Check if order is already refunded (double refund prevention)
+    if (order.status === 'Refunded') {
+      console.warn('[Admin.approveRefund] ✗ Step 1 validation FAILED: Order already refunded', {
+        orderId,
+        currentStatus: order.status
+      });
+      return res.status(400).send('This order has already been refunded');
+    }
+
     // Step 2: Fetch PayPal transaction details
     console.log('[Admin.approveRefund] Step 2: Fetching PayPal transaction...');
     Order.getTransactionByOrderId(orderId, async (err, transactions) => {
@@ -137,9 +147,17 @@ exports.approveRefund = (req, res) => {
       // Step 3: If this is a PayPal order, process the refund
       if (transaction && transaction.captureId && transaction.captureId !== 'N/A') {
         console.log('[Admin.approveRefund] Step 3: Processing PayPal refund...');
+        console.log('[Admin.approveRefund]   Transaction from database:', {
+          orderId: transaction.orderId,
+          amount: transaction.amount,
+          amountType: typeof transaction.amount,
+          currency: transaction.currency,
+          payment_currency: transaction.payment_currency,
+          captureId: transaction.captureId
+        });
         console.log('[Admin.approveRefund]   Calling PayPal refund API with:');
         console.log('[Admin.approveRefund]   - captureId:', transaction.captureId);
-        console.log('[Admin.approveRefund]   - amount:', transaction.amount);
+        console.log('[Admin.approveRefund]   - amount:', transaction.amount, '(type:', typeof transaction.amount + ')');
         console.log('[Admin.approveRefund]   - currency:', transaction.payment_currency || transaction.currency || 'SGD');
         
         try {
@@ -201,7 +219,7 @@ exports.approveRefund = (req, res) => {
           timestamp: new Date().toISOString()
         });
 
-        res.redirect('/admin?tab=orders');
+        res.redirect('/admin?tab=orders&refundSuccess=true&orderId=' + orderId);
       });
     });
   });
@@ -230,8 +248,32 @@ function createOrderFromSessionCart(req, callback) {
 
   const subtotal = cart.totalPrice;
   
-  // Handle coin discount first (applies to subtotal before GST)
-  const coinsToUse = req.body?.coinsToUse ? parseInt(req.body.coinsToUse) : 0;
+  // Handle wallet payment first (if selected as payment method)
+  const paymentMethod = req.body?.paymentMethod || null;
+  let walletPaymentAmount = 0;
+  let newWalletBalance = req.session.user.walletBalance || 0;
+  
+  if (paymentMethod === 'Wallet') {
+    // For wallet payment, the entire order total is paid from wallet
+    // No coins or voucher discounts apply - wallet IS the payment
+    walletPaymentAmount = subtotal;
+    
+    // Check if user has sufficient balance
+    if (newWalletBalance < walletPaymentAmount) {
+      const err = new Error('Insufficient wallet balance');
+      console.error('[HELPER] ERROR: Wallet payment failed - insufficient balance', {
+        userId,
+        required: walletPaymentAmount,
+        available: newWalletBalance
+      });
+      return callback(err);
+    }
+    
+    newWalletBalance -= walletPaymentAmount;
+  }
+  
+  // Handle coin discount (only if NOT using wallet payment)
+  const coinsToUse = (paymentMethod !== 'Wallet') ? (req.body?.coinsToUse ? parseInt(req.body.coinsToUse) : 0) : 0;
   let coinDiscount = 0;
   let discountedSubtotal = subtotal;
   
@@ -239,28 +281,44 @@ function createOrderFromSessionCart(req, callback) {
     coinDiscount = coinsToUse / 100; // 100 coins = $1
     discountedSubtotal = Math.max(0, subtotal - coinDiscount); // Apply discount to subtotal
   }
-  
-  // Calculate GST on the discounted subtotal
+
+  // Handle voucher discount (only if NOT using wallet payment)
+  const voucherId = (paymentMethod !== 'Wallet') ? (req.body?.voucherId ? parseInt(req.body.voucherId) : null) : null;
+  const voucherDiscount = (paymentMethod !== 'Wallet') ? (req.body?.voucherDiscount ? parseFloat(req.body.voucherDiscount) : 0) : 0;
+  let finalSubtotal = discountedSubtotal - voucherDiscount;
+  finalSubtotal = Math.max(0, finalSubtotal);
+
+  // Calculate GST on the final discounted subtotal
   const gstRate = 0.09; // 9% GST
-  const gst = discountedSubtotal * gstRate;
-  let totalAmount = discountedSubtotal + gst;
-  const pointsEarned = Math.floor(subtotal); // earn 1 point per $1 before GST
+  const gst = finalSubtotal * gstRate;
+  let totalAmount = finalSubtotal + gst;
+  
+  // If wallet payment, total is just the subtotal with GST (no discounts)
+  if (paymentMethod === 'Wallet') {
+    totalAmount = subtotal * (1 + gstRate);
+  }
+  
+  const pointsEarned = Math.floor(subtotal); // earn 1 point per $1 before any discounts
   
   console.log('[HELPER] Cart validated. Details:', {
     userId,
+    paymentMethod,
     subtotal,
+    walletPaymentAmount,
     coinDiscount,
+    voucherDiscount,
     discountedSubtotal,
+    finalSubtotal,
     gst,
     totalAmount,
     pointsEarned,
     coinsToUse,
+    voucherId,
     itemCount: Object.keys(cart.items).length
   });
 
   // 1. Insert order into orders table
   console.log('[HELPER] Step 1/5: Creating order in DB...');
-  const paymentMethod = req.body?.paymentMethod || null;
   let orderId; // Declare orderId in outer scope so finish() can access it
   const createCallback = (err, result) => {
     if (err) {
@@ -349,8 +407,9 @@ function createOrderFromSessionCart(req, callback) {
   Order.createOrder(userId, totalAmount, createCallback, paymentMethod);
 
     function finish() {
-      console.log('[HELPER] --- [FINISH: All items processed, updating loyalty points and coins] ---');
-      // 4. Update user loyalty points
+      console.log('[HELPER] --- [FINISH: All items processed, updating loyalty points, coins, and vouchers] ---');
+      
+      // 4. Update user loyalty points and coins
       const newPoints = (req.session.user.loyaltyPoints || 0) + pointsEarned;
       const newCoinBalance = coinsToUse > 0 
         ? (req.session.user.coinBalance || 0) - coinsToUse 
@@ -366,29 +425,78 @@ function createOrderFromSessionCart(req, callback) {
       });
 
       db.query(
-        'UPDATE users SET loyaltyPoints = ?, coinBalance = ? WHERE id = ?',
-        [newPoints, newCoinBalance, userId],
+        'UPDATE users SET loyaltyPoints = ?, coinBalance = ?, walletBalance = ? WHERE id = ?',
+        [newPoints, newCoinBalance, newWalletBalance, userId],
         (err5) => {
           if (err5) {
-            console.error('[HELPER] ERROR at Step 4: Loyalty points/coins update failed', {
+            console.error('[HELPER] ERROR at Step 4: User update failed', {
               userId,
               error: err5.message,
               code: err5.code,
               errno: err5.errno,
               sqlState: err5.sqlState
             });
+            // Continue anyway
           } else {
-            console.log('[HELPER] ✓ Step 4 complete: Loyalty points and coins updated', { userId, newPoints, newCoinBalance });
+            console.log('[HELPER] ✓ Step 4 complete: User account updated', { userId, newPoints, newCoinBalance, newWalletBalance });
           }
 
           req.session.user.loyaltyPoints = newPoints;
           req.session.user.coinBalance = newCoinBalance;
-          req.session.cart = null;
+          req.session.user.walletBalance = newWalletBalance;
 
-          console.log('[HELPER] === [CART HELPER SUCCESS] ===');
-          console.log('[HELPER] Final result:', { orderId, totalAmount, pointsEarned, coinsUsed: coinsToUse, coinDiscount });
-          // done
-          callback(null, { orderId, totalAmount, coinDiscount, coinsUsed: coinsToUse });
+          // 5. Mark voucher as used if provided
+          if (voucherId) {
+            console.log('[HELPER] Step 5: Marking voucher as used', { voucherId });
+            db.query(
+              'UPDATE vouchers SET isUsed = TRUE, usedDate = NOW(), updatedAt = NOW() WHERE id = ? AND userId = ?',
+              [voucherId, userId],
+              (err6) => {
+                if (err6) {
+                  console.warn('[HELPER] WARNING at Step 5: Voucher update failed', {
+                    voucherId,
+                    error: err6.message
+                  });
+                  // Continue anyway
+                } else {
+                  console.log('[HELPER] ✓ Step 5 complete: Voucher marked as used', { voucherId });
+                }
+
+                finalizeOrder();
+              }
+            );
+          } else {
+            console.log('[HELPER] Step 5: Skipped - No voucher to mark');
+            finalizeOrder();
+          }
+
+          function finalizeOrder() {
+            req.session.cart = null;
+
+            console.log('[HELPER] === [CART HELPER SUCCESS] ===');
+            console.log('[HELPER] Final result:', { 
+              orderId, 
+              totalAmount, 
+              pointsEarned, 
+              coinsUsed: coinsToUse, 
+              coinDiscount,
+              walletPaymentAmount,
+              voucherUsed: !!voucherId,
+              voucherDiscount,
+              paymentMethod
+            });
+            // done
+            callback(null, { 
+              orderId, 
+              totalAmount, 
+              coinDiscount, 
+              coinsUsed: coinsToUse,
+              voucherDiscount,
+              voucherUsed: !!voucherId,
+              walletPaymentAmount,
+              paymentMethod
+            });
+          }
         }
       );
     }
@@ -748,6 +856,7 @@ exports.netsQrSuccess = (req, res) => {
     
     // Render success page with orderId
     res.render('netsTxnSuccessStatus', { 
+      user: req.session.user,
       message: 'Transaction Successful!',
       orderId: result.orderId
     });

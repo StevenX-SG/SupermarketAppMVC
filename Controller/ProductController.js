@@ -93,7 +93,7 @@ exports.getProductById = function (req, res) {
 
 // === Show add product form ===
 exports.showAddForm = function (req, res) {
-  res.render('addProduct');
+  res.render('addProduct', { user: req.session.user });
 };
 
 // === Add product ===
@@ -136,7 +136,7 @@ exports.showEditForm = function (req, res) {
       return res.status(404).send('Product not found');
     }
 
-    res.render('editProduct', { product });
+    res.render('editProduct', { product, user: req.session.user });
   });
 };
 
@@ -177,19 +177,6 @@ exports.updateProduct = function (req, res) {
       res.redirect('/inventory');
     }
   );
-};
-
-// === Delete product ===
-exports.deleteProduct = function (req, res) {
-  const productId = req.params.id;
-
-  Product.deleteProduct(productId, function (err) {
-    if (err) {
-      console.log('Error deleting product:', err);
-      return res.status(500).send('Error deleting product');
-    }
-    res.redirect('/inventory');
-  });
 };
 
 // === Delete product (soft delete) ===
